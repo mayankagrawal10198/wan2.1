@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wan2.1 I2V Video Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .form-container {
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .resolution-options {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .resolution-option {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        .resolution-option:hover {
+            border-color: #667eea;
+            background: #f0f2ff;
+        }
+
+        .resolution-option.selected {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
+
+        .resolution-option h3 {
+            font-size: 1.2em;
+            margin-bottom: 5px;
+        }
+
+        .resolution-option p {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .file-upload {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .file-upload:hover {
+            background: #f0f2ff;
+            border-color: #764ba2;
+        }
+
+        .file-upload.dragover {
+            background: #e8f2ff;
+            border-color: #667eea;
+        }
+
+        .file-upload input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 1.1em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            font-size: 0.9em;
+            color: #999;
+        }
+
+        .selected-file {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e8f5e8;
+            border-radius: 5px;
+            color: #2d5a2d;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+            font-family: inherit;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea.form-control {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .generate-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .generate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .generate-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #28a745;
+        }
+
+        .result.success {
+            border-left-color: #28a745;
+            background: #f8fff9;
+        }
+
+        .result.error {
+            border-left-color: #dc3545;
+            background: #fff8f8;
+        }
+
+        .download-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            transition: background 0.3s ease;
+        }
+
+        .download-btn:hover {
+            background: #218838;
+        }
+
+        .error-message {
+            color: #dc3545;
+            font-weight: 500;
+        }
+
+        .success-message {
+            color: #28a745;
+            font-weight: 500;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+
+            .header {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .form-container {
+                padding: 20px;
+            }
+
+            .resolution-options {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Wan2.1 I2V Generator</h1>
+            <p>Transform your images into stunning videos with AI</p>
+        </div>
+
+        <div class="form-container">
+            <form id="videoForm">
+                <!-- Resolution Selection -->
+                <div class="form-group">
+                    <label>Select Resolution:</label>
+                    <div class="resolution-options">
+                        <div class="resolution-option selected" data-resolution="480p">
+                            <h3>480p</h3>
+                            <p>320×400</p>
+                        </div>
+                        <div class="resolution-option" data-resolution="720p">
+                            <h3>720p</h3>
+                            <p>576×720</p>
+                        </div>
+                    </div>
+                    <input type="hidden" id="resolution" name="resolution" value="480p">
+                </div>
+
+                <!-- Image Upload -->
+                <div class="form-group">
+                    <label>Upload Image:</label>
+                    <div class="file-upload" id="fileUpload">
+                        <div class="upload-icon">📁</div>
+                        <div class="upload-text">Click to select or drag & drop</div>
+                        <div class="upload-hint">Supports: PNG, JPG, JPEG, BMP, TIFF, WEBP (Max: 16MB)</div>
+                        <input type="file" id="imageFile" name="image" accept=".png,.jpg,.jpeg,.bmp,.tiff,.webp">
+                    </div>
+                    <div class="selected-file" id="selectedFile" style="display: none;"></div>
+                </div>
+
+                <!-- Positive Prompt -->
+                <div class="form-group">
+                    <label for="positivePrompt">Positive Prompt:</label>
+                    <textarea 
+                        class="form-control" 
+                        id="positivePrompt" 
+                        name="positive_prompt" 
+                        placeholder="Describe what you want to see in the video (e.g., A beautiful scene with gentle movement and cinematic quality)"
+                        required
+                    >A beautiful scene with gentle movement and cinematic quality</textarea>
+                </div>
+
+                <!-- Negative Prompt -->
+                <div class="form-group">
+                    <label for="negativePrompt">Negative Prompt:</label>
+                    <textarea 
+                        class="form-control" 
+                        id="negativePrompt" 
+                        name="negative_prompt" 
+                        placeholder="Describe what you don't want to see (e.g., static, blurred, low quality, distorted, ugly)"
+                    >static, blurred, low quality, distorted, ugly, watermark</textarea>
+                </div>
+
+                <!-- Generate Button -->
+                <button type="submit" class="generate-btn" id="generateBtn">
+                    🎬 Generate Video
+                </button>
+            </form>
+
+            <!-- Loading State -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Generating your video... This may take a few minutes.</p>
+            </div>
+
+            <!-- Result -->
+            <div class="result" id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        // Resolution selection
+        document.querySelectorAll('.resolution-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.resolution-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                document.getElementById('resolution').value = this.dataset.resolution;
+            });
+        });
+
+        // File upload handling
+        const fileUpload = document.getElementById('fileUpload');
+        const imageFile = document.getElementById('imageFile');
+        const selectedFile = document.getElementById('selectedFile');
+
+        fileUpload.addEventListener('click', () => imageFile.click());
+
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                imageFile.files = files;
+                updateFileDisplay(files[0]);
+            }
+        });
+
+        imageFile.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                updateFileDisplay(e.target.files[0]);
+            }
+        });
+
+        function updateFileDisplay(file) {
+            selectedFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            selectedFile.style.display = 'block';
+        }
+
+        // Form submission
+        document.getElementById('videoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            const imageFile = document.getElementById('imageFile').files[0];
+            const resolution = document.getElementById('resolution').value;
+            const positivePrompt = document.getElementById('positivePrompt').value;
+            const negativePrompt = document.getElementById('negativePrompt').value;
+
+            if (!imageFile) {
+                showResult('Please select an image file.', 'error');
+                return;
+            }
+
+            formData.append('image', imageFile);
+            formData.append('resolution', resolution);
+            formData.append('positive_prompt', positivePrompt);
+            formData.append('negative_prompt', negativePrompt);
+
+            // Show loading state
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('result').style.display = 'none';
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showResult(`
+                        <div class="success-message">${result.message}</div>
+                        <p><strong>Resolution:</strong> ${result.resolution} (${result.width}×${result.height})</p>
+                        <p><strong>Model:</strong> ${result.model_id}</p>
+                        <p><strong>File Size:</strong> ${result.file_size_mb} MB</p>
+                        <a href="/download/${result.output_file}" class="download-btn">📥 Download Video</a>
+                    `, 'success');
+                } else {
+                    showResult(`<div class="error-message">${result.error}</div>`, 'error');
+                }
+            } catch (error) {
+                showResult(`<div class="error-message">Network error: ${error.message}</div>`, 'error');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('generateBtn').disabled = false;
+            }
+        });
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = message;
+            resultDiv.className = `result ${type}`;
+            resultDiv.style.display = 'block';
+            resultDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html> 
