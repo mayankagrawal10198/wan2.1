@@ -1,0 +1,97 @@
+uploads
+models
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environment
+wan21-env/
+venv/
+env/
+.venv/
+ENV/
+*.egg-info/
+
+# Pip & poetry
+pip-wheel-metadata/
+poetry.lock
+*.lock
+
+# Jupyter Notebooks (optional)
+*.ipynb
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Cache
+*.cache/
+.cache/
+*.pkl
+*.tmp
+*.bak
+
+# Model weights and checkpoints
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Image/video outputs
+output/
+results/
+videos/
+images/
+frames/
+*.mp4
+*.mov
+*.avi
+*.webm
+*.jpg
+*.jpeg
+*.png
+
+# WAN2.1 specific
+checkpoints/
+comfyui/custom_nodes/*
+!comfyui/custom_nodes/.gitkeep  # Allow empty dirs
+comfyui/models/
+comfyui/output/
+comfyui/input/
+comfyui/venv/
+comfyui/env/
+comfyui/temp/
+comfyui/.cache/
+
+# WAN2.1 intermediate data
+*.npz
+*.npz.zip
+*.npy
+
+# Huggingface cache (if applicable)
+~/.cache/huggingface/
+huggingface/
+
+# Python egg files
+*.egg
+*.eggs/
+
+# Others
+wandb/
+*.run
