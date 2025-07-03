@@ -8,8 +8,6 @@ import time
 import logging
 import torch
 import gc
-import ssl
-import certifi
 from typing import Optional, Dict, Any, Union
 from pathlib import Path
 
@@ -89,29 +87,10 @@ class Wan21Pipeline:
         # Setup directories
         setup_directories()
         
-        # Configure SSL for Hugging Face downloads
-        self._configure_ssl()
-        
         # Log system information
         log_system_info()
         
         logger.info("Wan21Pipeline initialized successfully")
-    
-    def _configure_ssl(self):
-        """Configure SSL for Hugging Face downloads."""
-        try:
-            # Set SSL context with certifi certificates
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            # Set environment variables for requests
-            os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-            os.environ['SSL_CERT_FILE'] = certifi.where()
-            
-            logger.info("SSL configuration applied successfully")
-        except Exception as e:
-            logger.warning(f"SSL configuration failed: {e}")
     
     def _get_local_model_path(self) -> str:
         """Get local model path based on model_id."""
