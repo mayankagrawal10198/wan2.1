@@ -8,6 +8,8 @@ import time
 import logging
 import torch
 import gc
+import ssl
+import certifi
 from typing import Optional, Dict, Any, Union
 from pathlib import Path
 
@@ -87,10 +89,47 @@ class Wan21Pipeline:
         # Setup directories
         setup_directories()
         
+        # Configure SSL for Hugging Face downloads
+        self._configure_ssl()
+        
         # Log system information
         log_system_info()
         
         logger.info("Wan21Pipeline initialized successfully")
+    
+    def _configure_ssl(self):
+        """Configure SSL for Hugging Face downloads."""
+        try:
+            # Set SSL context with certifi certificates
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Set environment variables for requests
+            os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+            os.environ['SSL_CERT_FILE'] = certifi.where()
+            
+            logger.info("SSL configuration applied successfully")
+        except Exception as e:
+            logger.warning(f"SSL configuration failed: {e}")
+    
+    def _get_local_model_path(self) -> str:
+        """Get local model path based on model_id."""
+        # Map model IDs to local paths
+        model_paths = {
+            'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers': 'models/wan21-480p',
+            'Wan-AI/Wan2.1-I2V-14B-720P-Diffusers': 'models/wan21-720p'
+        }
+        
+        local_path = model_paths.get(self.model_id)
+        if not local_path:
+            raise ValueError(f"Unknown model_id: {self.model_id}")
+        
+        if not os.path.exists(local_path):
+            raise FileNotFoundError(f"Local model not found: {local_path}. Please run download_models.py first.")
+        
+        logger.info(f"Using local model path: {local_path}")
+        return local_path
     
     def load_model(self):
         """Load the Wan2.1 I2V model components."""
@@ -102,40 +141,37 @@ class Wan21Pipeline:
             # Check GPU memory before loading
             gpu_info = check_gpu_memory()
             
+            # Determine local model path based on model_id
+            local_model_path = self._get_local_model_path()
+            
             # Load image encoder
             logger.info("Loading image encoder...")
             self.image_encoder = CLIPVisionModel.from_pretrained(
-                self.model_id,
+                local_model_path,
                 subfolder="image_encoder",
                 torch_dtype=torch.float32,
-                cache_dir=self.cache_dir,
-                local_files_only=self.local_files_only,
-                revision=self.revision,
+                local_files_only=True,
                 low_cpu_mem_usage=True
             )
             
             # Load VAE
             logger.info("Loading VAE...")
             self.vae = AutoencoderKLWan.from_pretrained(
-                self.model_id,
+                local_model_path,
                 subfolder="vae",
                 torch_dtype=torch.float32,
-                cache_dir=self.cache_dir,
-                local_files_only=self.local_files_only,
-                revision=self.revision,
+                local_files_only=True,
                 low_cpu_mem_usage=True
             )
             
             # Load main pipeline
             logger.info("Loading main pipeline...")
             self.pipe = WanImageToVideoPipeline.from_pretrained(
-                self.model_id,
+                local_model_path,
                 vae=self.vae,
                 image_encoder=self.image_encoder,
                 torch_dtype=self.torch_dtype,
-                cache_dir=self.cache_dir,
-                local_files_only=self.local_files_only,
-                revision=self.revision,
+                local_files_only=True,
                 low_cpu_mem_usage=True
             )
             
