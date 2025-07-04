@@ -195,6 +195,23 @@
             box-shadow: none;
         }
 
+        .clear-btn {
+            padding: 15px 20px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .clear-btn:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
         .loading {
             display: none;
             text-align: center;
@@ -356,10 +373,15 @@
                     >static, blurred, low quality, distorted, ugly, watermark</textarea>
                 </div>
 
-                <!-- Generate Button -->
-                <button type="submit" class="generate-btn" id="generateBtn">
-                    🎬 Generate Video
-                </button>
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 15px; margin-top: 20px;">
+                    <button type="submit" class="generate-btn" id="generateBtn" style="flex: 1;">
+                        🎬 Generate Video
+                    </button>
+                    <button type="button" class="clear-btn" id="clearBtn" style="flex: 0 0 auto;">
+                        🗑️ Clear Form
+                    </button>
+                </div>
             </form>
 
             <!-- Loading State -->
@@ -374,6 +396,38 @@
     </div>
 
     <script>
+        // Clear form on page load to prevent cached data
+        window.addEventListener('load', function() {
+            resetForm();
+        });
+
+        // Form reset function
+        function resetForm() {
+            // Clear file inputs
+            document.getElementById('imageFile').value = '';
+            document.getElementById('videoFile').value = '';
+            
+            // Clear file display
+            document.getElementById('selectedFile').style.display = 'none';
+            document.getElementById('selectedVideoFile').style.display = 'none';
+            
+            // Reset prompts to defaults
+            document.getElementById('positivePrompt').value = 'A beautiful scene with gentle movement and cinematic quality';
+            document.getElementById('negativePrompt').value = 'static, blurred, low quality, distorted, ugly, watermark';
+            
+            // Reset resolution to 480p
+            document.querySelectorAll('.resolution-option').forEach(opt => opt.classList.remove('selected'));
+            document.querySelector('.resolution-option[data-resolution="480p"]').classList.add('selected');
+            document.getElementById('resolution').value = '480p';
+            
+            // Hide any previous results
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+            
+            // Enable generate button
+            document.getElementById('generateBtn').disabled = false;
+        }
+
         // Resolution selection
         document.querySelectorAll('.resolution-option').forEach(option => {
             option.addEventListener('click', function() {
@@ -381,6 +435,12 @@
                 this.classList.add('selected');
                 document.getElementById('resolution').value = this.dataset.resolution;
             });
+        });
+
+        // Clear form button
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            resetForm();
+            showResult('Form cleared successfully!', 'success');
         });
 
         // File upload handling
@@ -416,8 +476,11 @@
         });
 
         function updateFileDisplay(file) {
-            selectedFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            selectedFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) - Image Mode`;
             selectedFile.style.display = 'block';
+            selectedFile.style.background = '#e8f5e8';
+            selectedFile.style.color = '#2d5a2d';
+            selectedFile.style.border = '1px solid #c3e6cb';
         }
 
         // Video file upload handling
@@ -453,8 +516,11 @@
         });
 
         function updateVideoFileDisplay(file) {
-            selectedVideoFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            selectedVideoFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) - Video Guidance Enabled`;
             selectedVideoFile.style.display = 'block';
+            selectedVideoFile.style.background = '#e8f4fd';
+            selectedVideoFile.style.color = '#0c5460';
+            selectedVideoFile.style.border = '1px solid #bee5eb';
         }
 
         // Form submission
@@ -503,6 +569,11 @@
                         ${result.video_guidance ? '<p><strong>Video Guidance:</strong> ✅ Enabled</p>' : ''}
                         <a href="/download/${result.output_file}" class="download-btn">📥 Download Video</a>
                     `, 'success');
+                    
+                    // Reset form after successful generation
+                    // setTimeout(() => {
+                    //     resetForm();
+                    // }, 3000); // Reset after 3 seconds
                 } else {
                     showResult(`<div class="error-message">${result.error}</div>`, 'error');
                 }
