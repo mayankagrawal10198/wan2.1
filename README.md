@@ -110,6 +110,7 @@ The application now supports **video-guided generation** using the Wan2.1 VACE (
 - **Motion Control**: The generated video follows the movement patterns from your reference video
 - **Temporal Consistency**: Better frame-to-frame coherence
 - **Creative Control**: More precise control over the final video's motion
+- **Robust Processing**: Reliable frame extraction that handles various video formats and metadata issues
 
 ### Supported Video Formats
 

@@ -476,14 +476,14 @@ class WanVACEPipelineWrapper:
         logger.info("VACE memory optimizations applied successfully")
     
     def extract_video_frames(self, video_path: str, num_frames: int = 81) -> List[Image.Image]:
-        """Extract frames from video file."""
+        """Extract frames from video file using sequential extraction for reliability."""
         logger.info(f"Extracting {num_frames} frames from video: {video_path}")
         
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError(f"Could not open video file: {video_path}")
         
-        # Get video properties
+        # Get video properties for logging
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -491,65 +491,55 @@ class WanVACEPipelineWrapper:
         
         logger.info(f"Video info: {total_frames} frames, {fps} fps, {width}x{height}")
         
-        # Handle invalid frame count (negative or very large numbers)
-        if total_frames <= 0 or total_frames > 1000000:
-            logger.warning(f"Invalid frame count detected: {total_frames}. Using sequential frame extraction.")
-            # Extract frames sequentially until we get enough or reach end
-            frames = []
-            frame_count = 0
-            max_attempts = num_frames * 2  # Try up to 2x the requested frames
+        # Always use sequential frame extraction for reliability
+        frames = []
+        frame_count = 0
+        max_attempts = num_frames * 3  # Try up to 3x the requested frames to ensure we get enough
+        
+        # Calculate skip interval for even distribution
+        if total_frames > 0 and total_frames > num_frames:
+            skip_interval = max(1, total_frames // num_frames)
+            logger.info(f"Using skip interval of {skip_interval} frames for even distribution")
+        else:
+            skip_interval = 1
+            logger.info("Extracting all available frames")
+        
+        while len(frames) < num_frames and frame_count < max_attempts:
+            ret, frame = cap.read()
+            if not ret:
+                logger.info(f"Reached end of video after {frame_count} frames")
+                break
             
-            while len(frames) < num_frames and frame_count < max_attempts:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
+            # Add frame if we haven't reached our target count
+            if len(frames) < num_frames:
                 # Convert BGR to RGB
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 pil_image = Image.fromarray(frame_rgb)
                 frames.append(pil_image)
-                frame_count += 1
-                
-                # Skip frames to get even distribution
-                if total_frames > 0 and total_frames > num_frames:
-                    skip_frames = max(1, total_frames // num_frames)
-                    for _ in range(skip_frames - 1):
-                        cap.read()  # Skip frames
-                        frame_count += 1
-        else:
-            # Normal case: calculate frame indices to extract
-            if total_frames <= num_frames:
-                # If video has fewer frames than needed, extract all frames
-                frame_indices = list(range(total_frames))
-            else:
-                # Extract evenly distributed frames
-                frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
             
-            frames = []
-            for i, frame_idx in enumerate(frame_indices):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
-                if ret:
-                    # Convert BGR to RGB
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    pil_image = Image.fromarray(frame_rgb)
-                    frames.append(pil_image)
-                else:
-                    logger.warning(f"Failed to read frame {frame_idx}")
+            frame_count += 1
+            
+            # Skip frames for even distribution (except for the last frame)
+            if skip_interval > 1 and len(frames) < num_frames:
+                for _ in range(skip_interval - 1):
+                    skip_ret = cap.read()
+                    if not skip_ret:
+                        break
+                    frame_count += 1
         
         cap.release()
         
-        logger.info(f"Extracted {len(frames)} frames from video")
+        logger.info(f"Sequential extraction: processed {frame_count} frames, extracted {len(frames)} frames")
         
         # Ensure we have at least 2 frames
         if len(frames) < 2:
-            logger.warning(f"OpenCV failed to extract frames. Trying with imageio...")
+            logger.warning(f"OpenCV sequential extraction failed. Trying with imageio...")
             return self._extract_frames_with_imageio(video_path, num_frames)
         
         return frames
     
     def _extract_frames_with_imageio(self, video_path: str, num_frames: int = 81) -> List[Image.Image]:
-        """Extract frames using imageio as fallback."""
+        """Extract frames using imageio with sequential approach as fallback."""
         logger.info(f"Extracting {num_frames} frames using imageio: {video_path}")
         
         try:
@@ -561,25 +551,36 @@ class WanVACEPipelineWrapper:
             if total_frames < 2:
                 raise ValueError(f"Video has too few frames: {total_frames}")
             
-            # Calculate frame indices
-            if total_frames <= num_frames:
-                frame_indices = list(range(total_frames))
-            else:
-                frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
-            
+            # Use sequential extraction for consistency
             frames = []
-            for frame_idx in frame_indices:
-                if frame_idx < total_frames:
+            frame_count = 0
+            max_attempts = min(total_frames, num_frames * 3)
+            
+            # Calculate skip interval for even distribution
+            if total_frames > num_frames:
+                skip_interval = max(1, total_frames // num_frames)
+                logger.info(f"Imageio using skip interval of {skip_interval} frames")
+            else:
+                skip_interval = 1
+                logger.info("Imageio extracting all available frames")
+            
+            for frame_idx in range(0, min(total_frames, max_attempts), skip_interval):
+                if len(frames) >= num_frames:
+                    break
+                
+                try:
                     frame = video.get_data(frame_idx)
                     # Convert to PIL Image
                     pil_image = Image.fromarray(frame)
                     frames.append(pil_image)
-                else:
-                    logger.warning(f"Frame index {frame_idx} out of range")
+                    frame_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to read frame {frame_idx}: {e}")
+                    continue
             
             video.close()
             
-            logger.info(f"Imageio extracted {len(frames)} frames")
+            logger.info(f"Imageio sequential extraction: processed {frame_count} frames, extracted {len(frames)} frames")
             
             if len(frames) < 2:
                 raise ValueError(f"Could not extract enough frames with imageio. Got {len(frames)} frames.")
