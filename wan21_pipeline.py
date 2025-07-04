@@ -213,7 +213,7 @@ class Wan21Pipeline:
         height: Optional[int] = None,
         width: Optional[int] = None,
         output_path: Optional[str] = None,
-        fps: int = 16,
+        fps: int = DEFAULT_FPS,
         seed: Optional[int] = None
     ) -> str:
         """
