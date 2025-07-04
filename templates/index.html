@@ -321,6 +321,18 @@
                     <div class="selected-file" id="selectedFile" style="display: none;"></div>
                 </div>
 
+                <!-- Video Upload (Optional) -->
+                <div class="form-group">
+                    <label>Upload Video (Optional - for movement guidance):</label>
+                    <div class="file-upload" id="videoFileUpload">
+                        <div class="upload-icon">🎬</div>
+                        <div class="upload-text">Click to select or drag & drop</div>
+                        <div class="upload-hint">Supports: MP4, AVI, MOV, MKV (Max: 50MB) - Optional for movement guidance</div>
+                        <input type="file" id="videoFile" name="video" accept=".mp4,.avi,.mov,.mkv">
+                    </div>
+                    <div class="selected-file" id="selectedVideoFile" style="display: none;"></div>
+                </div>
+
                 <!-- Positive Prompt -->
                 <div class="form-group">
                     <label for="positivePrompt">Positive Prompt:</label>
@@ -408,12 +420,50 @@
             selectedFile.style.display = 'block';
         }
 
+        // Video file upload handling
+        const videoFileUpload = document.getElementById('videoFileUpload');
+        const videoFile = document.getElementById('videoFile');
+        const selectedVideoFile = document.getElementById('selectedVideoFile');
+
+        videoFileUpload.addEventListener('click', () => videoFile.click());
+
+        videoFileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            videoFileUpload.classList.add('dragover');
+        });
+
+        videoFileUpload.addEventListener('dragleave', () => {
+            videoFileUpload.classList.remove('dragover');
+        });
+
+        videoFileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            videoFileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                videoFile.files = files;
+                updateVideoFileDisplay(files[0]);
+            }
+        });
+
+        videoFile.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                updateVideoFileDisplay(e.target.files[0]);
+            }
+        });
+
+        function updateVideoFileDisplay(file) {
+            selectedVideoFile.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            selectedVideoFile.style.display = 'block';
+        }
+
         // Form submission
         document.getElementById('videoForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const formData = new FormData();
             const imageFile = document.getElementById('imageFile').files[0];
+            const videoFile = document.getElementById('videoFile').files[0];
             const resolution = document.getElementById('resolution').value;
             const positivePrompt = document.getElementById('positivePrompt').value;
             const negativePrompt = document.getElementById('negativePrompt').value;
@@ -424,6 +474,9 @@
             }
 
             formData.append('image', imageFile);
+            if (videoFile) {
+                formData.append('video', videoFile);
+            }
             formData.append('resolution', resolution);
             formData.append('positive_prompt', positivePrompt);
             formData.append('negative_prompt', negativePrompt);
@@ -445,8 +498,9 @@
                     showResult(`
                         <div class="success-message">${result.message}</div>
                         <p><strong>Resolution:</strong> ${result.resolution} (${result.width}×${result.height})</p>
-                        <p><strong>Model:</strong> ${result.model_id}</p>
+                        <p><strong>Model:</strong> ${result.model_type}</p>
                         <p><strong>File Size:</strong> ${result.file_size_mb} MB</p>
+                        ${result.video_guidance ? '<p><strong>Video Guidance:</strong> ✅ Enabled</p>' : ''}
                         <a href="/download/${result.output_file}" class="download-btn">📥 Download Video</a>
                     `, 'success');
                 } else {

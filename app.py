@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 import uuid
 from pathlib import Path
 
-from wan21_pipeline import Wan21Pipeline
+from wan21_pipeline import Wan21Pipeline, WanVACEPipeline
 from utils import setup_directories
 
 # Setup logging
@@ -20,12 +20,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for videos
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'output'
 
 # Allowed file extensions
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv'}
 
 # Resolution presets with model IDs
 RESOLUTION_PRESETS = {
@@ -43,7 +44,11 @@ RESOLUTION_PRESETS = {
 
 def allowed_file(filename):
     """Check if file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+def allowed_video_file(filename):
+    """Check if video file extension is allowed."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
 
 def setup_app_directories():
     """Setup necessary directories for the web app."""
@@ -70,7 +75,22 @@ def generate_video():
             return jsonify({'error': 'No image file selected'}), 400
         
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Allowed: PNG, JPG, JPEG, BMP, TIFF, WEBP'}), 400
+            return jsonify({'error': 'Invalid image file type. Allowed: PNG, JPG, JPEG, BMP, TIFF, WEBP'}), 400
+        
+        # Check for optional video file
+        video_file = request.files.get('video')
+        video_path = None
+        
+        if video_file and video_file.filename != '':
+            if not allowed_video_file(video_file.filename):
+                return jsonify({'error': 'Invalid video file type. Allowed: MP4, AVI, MOV, MKV'}), 400
+            
+            # Save uploaded video file
+            video_filename = secure_filename(video_file.filename)
+            video_unique_filename = f"{uuid.uuid4()}_{video_filename}"
+            video_path = os.path.join(app.config['UPLOAD_FOLDER'], video_unique_filename)
+            video_file.save(video_path)
+            logger.info(f"Processing video: {video_path}")
         
         # Get form data
         resolution = request.form.get('resolution', '480p')
@@ -86,7 +106,7 @@ def generate_video():
         height = RESOLUTION_PRESETS[resolution]['height']
         model_id = RESOLUTION_PRESETS[resolution]['model_id']
         
-        # Save uploaded file
+        # Save uploaded image file
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
         upload_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
@@ -97,21 +117,40 @@ def generate_video():
         logger.info(f"Model ID: {model_id}")
         logger.info(f"Positive prompt: {positive_prompt}")
         logger.info(f"Negative prompt: {negative_prompt}")
+        logger.info(f"Video guidance: {'Yes' if video_path else 'No'}")
         
         # Generate output filename
         output_filename = f"generated_{uuid.uuid4()}.mp4"
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
         
-        # Initialize pipeline with specific model ID and generate video
-        with Wan21Pipeline(model_id=model_id) as pipeline:
-            result_path = pipeline.generate_video(
-                image_path=upload_path,
-                prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                width=width,
-                height=height,
-                output_path=output_path
-            )
+        # Choose pipeline based on whether video is provided
+        if video_path:
+            # Use VACE pipeline for video-guided generation
+            logger.info("Using VACE pipeline for video-guided generation")
+            with WanVACEPipeline() as pipeline:
+                result_path = pipeline.generate_video_with_guidance(
+                    image_path=upload_path,
+                    video_path=video_path,
+                    prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    width=width,
+                    height=height,
+                    output_path=output_path
+                )
+            model_type = "VACE (Video-Guided)"
+        else:
+            # Use standard I2V pipeline
+            logger.info("Using standard I2V pipeline")
+            with Wan21Pipeline(model_id=model_id) as pipeline:
+                result_path = pipeline.generate_video(
+                    image_path=upload_path,
+                    prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    width=width,
+                    height=height,
+                    output_path=output_path
+                )
+            model_type = "I2V (Image-to-Video)"
         
         # Get file size
         file_size = os.path.getsize(result_path) / (1024 * 1024)  # MB
@@ -127,7 +166,9 @@ def generate_video():
             'resolution': resolution,
             'width': width,
             'height': height,
-            'model_id': model_id
+            'model_id': model_id,
+            'model_type': model_type,
+            'video_guidance': video_path is not None
         })
         
     except Exception as e:

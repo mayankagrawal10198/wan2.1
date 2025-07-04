@@ -96,6 +96,67 @@ Then open: http://localhost:8080
 
 For detailed web interface documentation, see [WEB_README.md](WEB_README.md).
 
+## Video Guidance Feature
+
+The application now supports **video-guided generation** using the Wan2.1 VACE (Video-Aware Conditional Editing) pipeline. This allows you to provide a reference video to guide the movement and motion of your generated video.
+
+### How It Works
+
+1. **Standard I2V**: Upload only an image → Uses Wan2.1 I2V pipeline
+2. **Video-Guided**: Upload image + video → Uses Wan2.1 VACE pipeline
+
+### Video Guidance Benefits
+
+- **Motion Control**: The generated video follows the movement patterns from your reference video
+- **Temporal Consistency**: Better frame-to-frame coherence
+- **Creative Control**: More precise control over the final video's motion
+
+### Supported Video Formats
+
+- **Input Videos**: MP4, AVI, MOV, MKV (max 50MB)
+- **Output**: MP4 format with 16 FPS
+
+### Usage Examples
+
+#### Web Interface
+1. Upload your image
+2. **Optionally** upload a reference video for movement guidance
+3. Enter your prompts
+4. Select resolution (480p or 720p)
+5. Generate video
+
+#### Programmatic Usage
+```python
+from wan21_pipeline import WanVACEPipeline
+
+# Initialize VACE pipeline
+pipeline = WanVACEPipeline()
+
+# Generate video with video guidance
+pipeline.generate_video_with_guidance(
+    image_path="input.jpg",
+    video_path="reference_video.mp4",
+    prompt="A beautiful scene with gentle movement",
+    height=480,
+    width=832,
+    num_frames=81,
+    guidance_scale=5.0,
+    conditioning_scale=1.0
+)
+```
+
+### Model Downloads
+
+The VACE model is automatically downloaded when you run:
+```bash
+python download_models.py
+```
+
+This downloads:
+- `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers` → `models/wan21-480p`
+- `Wan-AI/Wan2.1-I2V-14B-720P-Diffusers` → `models/wan21-720p`
+- `Wan-AI/Wan2.1-VACE-14B-diffusers` → `models/wan21-vace`
+
 ## Usage Examples
 
 ### Basic Video Generation

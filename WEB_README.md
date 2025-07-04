@@ -10,6 +10,35 @@ A beautiful web interface for the Wan2.1 I2V (Image-to-Video) model that allows 
 - **Real-time Feedback**: Loading states and progress indicators
 - **Automatic Download**: Generated videos are automatically available for download
 - **Multiple Format Support**: PNG, JPG, JPEG, BMP, TIFF, WEBP
+- **🎬 Video Guidance**: Optional video upload for movement guidance using VACE pipeline
+
+## 🎬 Video Guidance Feature
+
+The web interface now supports **video-guided generation** using the Wan2.1 VACE (Video-Aware Conditional Editing) pipeline. This allows you to provide a reference video to guide the movement and motion of your generated video.
+
+### How It Works
+
+1. **Standard I2V**: Upload only an image → Uses Wan2.1 I2V pipeline
+2. **Video-Guided**: Upload image + video → Uses Wan2.1 VACE pipeline
+
+### Video Guidance Benefits
+
+- **Motion Control**: The generated video follows the movement patterns from your reference video
+- **Temporal Consistency**: Better frame-to-frame coherence
+- **Creative Control**: More precise control over the final video's motion
+
+### Supported Video Formats
+
+- **Input Videos**: MP4, AVI, MOV, MKV (max 50MB)
+- **Output**: MP4 format with 16 FPS
+
+### Usage Steps
+
+1. **Upload Image**: Select your input image (required)
+2. **Upload Video** (Optional): Select a reference video for movement guidance
+3. **Enter Prompts**: Describe what you want to see
+4. **Select Resolution**: Choose 480p or 720p
+5. **Generate**: The system automatically chooses the appropriate pipeline
 
 ## 🚀 Quick Start
 
@@ -56,7 +85,8 @@ Open your browser and go to: **http://localhost:8080**
 Generate a video from uploaded image and prompts.
 
 **Request:**
-- `image`: Image file (multipart/form-data)
+- `image`: Image file (multipart/form-data) - **Required**
+- `video`: Video file (multipart/form-data) - **Optional** for video guidance
 - `resolution`: "480p" or "720p"
 - `positive_prompt`: Text description of desired video
 - `negative_prompt`: Text description of unwanted elements
@@ -71,7 +101,9 @@ Generate a video from uploaded image and prompts.
     "resolution": "720p",
     "width": 576,
     "height": 720,
-    "model_id": "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"
+    "model_id": "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
+    "model_type": "VACE (Video-Guided)",
+    "video_guidance": true
 }
 ```
 
@@ -113,8 +145,9 @@ RESOLUTION_PRESETS = {
 ```
 
 ### File Upload Settings
-- Maximum file size: 16MB
-- Allowed extensions: PNG, JPG, JPEG, BMP, TIFF, WEBP
+- Maximum file size: 50MB (increased for video files)
+- Allowed image extensions: PNG, JPG, JPEG, BMP, TIFF, WEBP
+- Allowed video extensions: MP4, AVI, MOV, MKV
 
 ## 🛠️ Development
 

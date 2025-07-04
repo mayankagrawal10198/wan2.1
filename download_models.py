@@ -22,6 +22,10 @@ MODELS = {
     '720p': {
         'model_id': 'Wan-AI/Wan2.1-I2V-14B-720P-Diffusers', 
         'local_path': 'models/wan21-720p'
+    },
+    'vace': {
+        'model_id': 'Wan-AI/Wan2.1-VACE-14B-diffusers',
+        'local_path': 'models/wan21-vace'
     }
 }
 
