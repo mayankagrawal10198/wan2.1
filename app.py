@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 import uuid
 from pathlib import Path
 
-from wan21_pipeline import Wan21Pipeline, WanVACEPipeline
+from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
 from utils import setup_directories
 
 # Setup logging
@@ -127,7 +127,7 @@ def generate_video():
         if video_path:
             # Use VACE pipeline for video-guided generation
             logger.info("Using VACE pipeline for video-guided generation")
-            with WanVACEPipeline() as pipeline:
+            with WanVACEPipelineWrapper() as pipeline:
                 result_path = pipeline.generate_video_with_guidance(
                     image_path=upload_path,
                     video_path=video_path,

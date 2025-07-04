@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
 from PIL import Image
 
-from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanVACEPipeline
+from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanVACEPipeline as DiffusersWanVACEPipeline
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 from diffusers.utils import export_to_video, load_image
 from transformers import CLIPVisionModel
@@ -352,7 +352,7 @@ class Wan21Pipeline:
         }
 
 
-class WanVACEPipeline:
+class WanVACEPipelineWrapper:
     """
     Wan2.1 VACE Pipeline for video-guided generation
     """
@@ -397,7 +397,7 @@ class WanVACEPipeline:
         # Log system information
         log_system_info()
         
-        logger.info("WanVACEPipeline initialized successfully")
+        logger.info("WanVACEPipelineWrapper initialized successfully")
     
     def _get_local_model_path(self) -> str:
         """Get local model path for VACE model."""
@@ -434,7 +434,7 @@ class WanVACEPipeline:
             
             # Load main VACE pipeline
             logger.info("Loading VACE pipeline...")
-            self.pipe = WanVACEPipeline.from_pretrained(
+            self.pipe = DiffusersWanVACEPipeline.from_pretrained(
                 local_model_path,
                 vae=self.vae,
                 torch_dtype=self.torch_dtype,

@@ -11,7 +11,7 @@ from pathlib import Path
 # Add parent directory to path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 
-from wan21_pipeline import WanVACEPipeline
+from wan21_pipeline import WanVACEPipelineWrapper
 from config import DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT
 
 def main():
@@ -43,7 +43,7 @@ def main():
     try:
         # Initialize VACE pipeline
         print("🚀 Initializing VACE pipeline...")
-        with WanVACEPipeline() as pipeline:
+        with WanVACEPipelineWrapper() as pipeline:
             print("✅ VACE pipeline initialized successfully")
             
             # Generate video with guidance

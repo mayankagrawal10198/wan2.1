@@ -127,10 +127,10 @@ The application now supports **video-guided generation** using the Wan2.1 VACE (
 
 #### Programmatic Usage
 ```python
-from wan21_pipeline import WanVACEPipeline
+from wan21_pipeline import WanVACEPipelineWrapper
 
 # Initialize VACE pipeline
-pipeline = WanVACEPipeline()
+pipeline = WanVACEPipelineWrapper()
 
 # Generate video with video guidance
 pipeline.generate_video_with_guidance(
