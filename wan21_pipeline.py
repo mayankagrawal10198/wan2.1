@@ -10,6 +10,7 @@ import torch
 import gc
 import cv2
 import numpy as np
+import imageio
 from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
 from PIL import Image
@@ -482,35 +483,112 @@ class WanVACEPipelineWrapper:
         if not cap.isOpened():
             raise ValueError(f"Could not open video file: {video_path}")
         
+        # Get video properties
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        logger.info(f"Video info: {total_frames} frames, {fps} fps")
+        logger.info(f"Video info: {total_frames} frames, {fps} fps, {width}x{height}")
         
-        # Calculate frame indices to extract
-        if total_frames <= num_frames:
-            # If video has fewer frames than needed, extract all frames
-            frame_indices = list(range(total_frames))
-        else:
-            # Extract evenly distributed frames
-            frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
-        
-        frames = []
-        for i, frame_idx in enumerate(frame_indices):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if ret:
+        # Handle invalid frame count (negative or very large numbers)
+        if total_frames <= 0 or total_frames > 1000000:
+            logger.warning(f"Invalid frame count detected: {total_frames}. Using sequential frame extraction.")
+            # Extract frames sequentially until we get enough or reach end
+            frames = []
+            frame_count = 0
+            max_attempts = num_frames * 2  # Try up to 2x the requested frames
+            
+            while len(frames) < num_frames and frame_count < max_attempts:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
                 # Convert BGR to RGB
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 pil_image = Image.fromarray(frame_rgb)
                 frames.append(pil_image)
+                frame_count += 1
+                
+                # Skip frames to get even distribution
+                if total_frames > 0 and total_frames > num_frames:
+                    skip_frames = max(1, total_frames // num_frames)
+                    for _ in range(skip_frames - 1):
+                        cap.read()  # Skip frames
+                        frame_count += 1
+        else:
+            # Normal case: calculate frame indices to extract
+            if total_frames <= num_frames:
+                # If video has fewer frames than needed, extract all frames
+                frame_indices = list(range(total_frames))
             else:
-                logger.warning(f"Failed to read frame {frame_idx}")
+                # Extract evenly distributed frames
+                frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
+            
+            frames = []
+            for i, frame_idx in enumerate(frame_indices):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if ret:
+                    # Convert BGR to RGB
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    pil_image = Image.fromarray(frame_rgb)
+                    frames.append(pil_image)
+                else:
+                    logger.warning(f"Failed to read frame {frame_idx}")
         
         cap.release()
         
         logger.info(f"Extracted {len(frames)} frames from video")
+        
+        # Ensure we have at least 2 frames
+        if len(frames) < 2:
+            logger.warning(f"OpenCV failed to extract frames. Trying with imageio...")
+            return self._extract_frames_with_imageio(video_path, num_frames)
+        
         return frames
+    
+    def _extract_frames_with_imageio(self, video_path: str, num_frames: int = 81) -> List[Image.Image]:
+        """Extract frames using imageio as fallback."""
+        logger.info(f"Extracting {num_frames} frames using imageio: {video_path}")
+        
+        try:
+            # Read video with imageio
+            video = imageio.get_reader(video_path)
+            total_frames = len(video)
+            logger.info(f"Imageio video info: {total_frames} frames")
+            
+            if total_frames < 2:
+                raise ValueError(f"Video has too few frames: {total_frames}")
+            
+            # Calculate frame indices
+            if total_frames <= num_frames:
+                frame_indices = list(range(total_frames))
+            else:
+                frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
+            
+            frames = []
+            for frame_idx in frame_indices:
+                if frame_idx < total_frames:
+                    frame = video.get_data(frame_idx)
+                    # Convert to PIL Image
+                    pil_image = Image.fromarray(frame)
+                    frames.append(pil_image)
+                else:
+                    logger.warning(f"Frame index {frame_idx} out of range")
+            
+            video.close()
+            
+            logger.info(f"Imageio extracted {len(frames)} frames")
+            
+            if len(frames) < 2:
+                raise ValueError(f"Could not extract enough frames with imageio. Got {len(frames)} frames.")
+            
+            return frames
+            
+        except Exception as e:
+            logger.error(f"Imageio extraction failed: {e}")
+            raise ValueError(f"Failed to extract frames from video with both OpenCV and imageio: {e}")
     
     def prepare_video_and_mask(self, first_img: Image.Image, last_img: Image.Image, 
                               height: int, width: int, num_frames: int) -> tuple:
@@ -586,6 +664,13 @@ class WanVACEPipelineWrapper:
         if not os.path.exists(video_path):
             raise ValueError(f"Video file not found: {video_path}")
         
+        # Check file size
+        file_size = os.path.getsize(video_path)
+        if file_size == 0:
+            raise ValueError(f"Video file is empty: {video_path}")
+        
+        logger.info(f"Video file size: {file_size / (1024*1024):.1f} MB")
+        
         # Load model if not loaded
         if self.pipe is None:
             self.load_model()
@@ -608,7 +693,11 @@ class WanVACEPipelineWrapper:
         
         # Extract frames from guidance video
         logger.info(f"Extracting frames from guidance video: {video_path}")
-        video_frames = self.extract_video_frames(video_path, num_frames)
+        try:
+            video_frames = self.extract_video_frames(video_path, num_frames)
+        except Exception as e:
+            logger.error(f"Failed to extract frames from video: {e}")
+            raise ValueError(f"Video processing failed. Please ensure the video file is valid and not corrupted. Error: {e}")
         
         if len(video_frames) < 2:
             raise ValueError("Video must have at least 2 frames")
