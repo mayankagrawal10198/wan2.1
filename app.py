@@ -123,10 +123,15 @@ def generate_video():
         output_filename = f"generated_{uuid.uuid4()}.mp4"
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
         
-        # Choose pipeline based on whether video is provided
+        # Generate videos based on whether video guidance is provided
+        generated_videos = []
+        
         if video_path:
             # Use VACE pipeline for video-guided generation
             logger.info("Using VACE pipeline for video-guided generation")
+            vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
+            vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
+            
             with WanVACEPipelineWrapper() as pipeline:
                 result_path = pipeline.generate_video_with_guidance(
                     image_path=upload_path,
@@ -135,39 +140,117 @@ def generate_video():
                     negative_prompt=negative_prompt,
                     width=width,
                     height=height,
-                    output_path=output_path
+                    output_path=vace_output_path
                 )
-            model_type = "VACE (Video-Guided)"
+            
+            file_size = os.path.getsize(result_path) / (1024 * 1024)  # MB
+            generated_videos.append({
+                'filename': vace_output_filename,
+                'file_size_mb': round(file_size, 1),
+                'model_type': "VACE (Video-Guided)",
+                'description': "Video-guided generation using VACE pipeline"
+            })
+            
+            logger.info(f"VACE video generated successfully: {result_path}")
+            logger.info(f"File size: {file_size:.1f} MB")
+            
         else:
-            # Use standard I2V pipeline
-            logger.info("Using standard I2V pipeline")
+            # Generate both I2V and VACE videos
+            logger.info("Generating both I2V and VACE videos")
+            
+            # Generate I2V video
+            i2v_output_filename = f"generated_i2v_{uuid.uuid4()}.mp4"
+            i2v_output_path = os.path.join(app.config['OUTPUT_FOLDER'], i2v_output_filename)
+            
             with Wan21Pipeline(model_id=model_id) as pipeline:
-                result_path = pipeline.generate_video(
+                i2v_result_path = pipeline.generate_video(
                     image_path=upload_path,
                     prompt=positive_prompt,
                     negative_prompt=negative_prompt,
                     width=width,
                     height=height,
-                    output_path=output_path
+                    output_path=i2v_output_path
                 )
-            model_type = "I2V (Image-to-Video)"
-        
-        # Get file size
-        file_size = os.path.getsize(result_path) / (1024 * 1024)  # MB
-        
-        logger.info(f"Video generated successfully: {result_path}")
-        logger.info(f"File size: {file_size:.1f} MB")
+            
+            i2v_file_size = os.path.getsize(i2v_result_path) / (1024 * 1024)  # MB
+            generated_videos.append({
+                'filename': i2v_output_filename,
+                'file_size_mb': round(i2v_file_size, 1),
+                'model_type': "I2V (Image-to-Video)",
+                'description': "Standard image-to-video generation"
+            })
+            
+            logger.info(f"I2V video generated successfully: {i2v_result_path}")
+            logger.info(f"File size: {i2v_file_size:.1f} MB")
+            
+            # Generate VACE video (without video guidance)
+            vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
+            vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
+            
+            # Create a simple motion video for VACE guidance
+            import cv2
+            import numpy as np
+            from PIL import Image
+            
+            # Create a simple horizontal motion video
+            temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_motion_{uuid.uuid4()}.mp4")
+            
+            # Load the input image
+            img = cv2.imread(upload_path)
+            img = cv2.resize(img, (width, height))
+            
+            # Create video writer
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(temp_video_path, fourcc, 8.0, (width, height))
+            
+            # Create frames with horizontal motion
+            for i in range(16):  # 16 frames for motion
+                # Create a frame with slight horizontal shift
+                shift = int((i / 15.0) * 20)  # 20 pixel shift over 16 frames
+                frame = np.roll(img, shift, axis=1)
+                out.write(frame)
+            
+            out.release()
+            
+            try:
+                with WanVACEPipelineWrapper() as pipeline:
+                    vace_result_path = pipeline.generate_video_with_guidance(
+                        image_path=upload_path,
+                        video_path=temp_video_path,
+                        prompt=positive_prompt,
+                        negative_prompt=negative_prompt,
+                        width=width,
+                        height=height,
+                        output_path=vace_output_path
+                    )
+                
+                vace_file_size = os.path.getsize(vace_result_path) / (1024 * 1024)  # MB
+                generated_videos.append({
+                    'filename': vace_output_filename,
+                    'file_size_mb': round(vace_file_size, 1),
+                    'model_type': "VACE (Motion-Guided)",
+                    'description': "Motion-guided generation using VACE pipeline"
+                })
+                
+                logger.info(f"VACE video generated successfully: {vace_result_path}")
+                logger.info(f"File size: {vace_file_size:.1f} MB")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate VACE video: {e}")
+                # Continue with just I2V video if VACE fails
+            
+            # Clean up temporary video
+            if os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
         
         return jsonify({
             'success': True,
-            'message': 'Video generated successfully!',
-            'output_file': output_filename,
-            'file_size_mb': round(file_size, 1),
+            'message': f'Generated {len(generated_videos)} video(s) successfully!',
+            'videos': generated_videos,
             'resolution': resolution,
             'width': width,
             'height': height,
             'model_id': model_id,
-            'model_type': model_type,
             'video_guidance': video_path is not None
         })
         
@@ -182,6 +265,15 @@ def download_video(filename):
         return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
     except Exception as e:
         logger.error(f"Error downloading file {filename}: {e}")
+        return jsonify({'error': 'File not found'}), 404
+
+@app.route('/video/<filename>')
+def serve_video(filename):
+    """Serve video file for preview (without download)."""
+    try:
+        return send_from_directory(app.config['OUTPUT_FOLDER'], filename, mimetype='video/mp4')
+    except Exception as e:
+        logger.error(f"Error serving video file {filename}: {e}")
         return jsonify({'error': 'File not found'}), 404
 
 @app.route('/health')
