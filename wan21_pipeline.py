@@ -23,7 +23,7 @@ from transformers import CLIPVisionModel
 from config import (
     DEFAULT_FPS, DEFAULT_MODEL_ID, DEFAULT_TORCH_DTYPE, DEFAULT_DEVICE,
     DEFAULT_NUM_FRAMES, DEFAULT_GUIDANCE_SCALE, DEFAULT_NUM_INFERENCE_STEPS,
-    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT
+    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT, LORA_GUIDANCE_SCALE, LORA_NUM_INFERENCE_STEPS
 )
 from utils import (
     setup_directories, validate_image_path, load_and_preprocess_image,
@@ -256,9 +256,7 @@ class Wan21Pipeline:
         width: Optional[int] = None,
         output_path: Optional[str] = None,
         fps: int = DEFAULT_FPS,
-        seed: Optional[int] = None,
-        # CausVid optimized defaults
-        use_causvid_defaults: bool = False
+        seed: Optional[int] = None
     ) -> str:
         """
         Generate video from input image
@@ -268,23 +266,23 @@ class Wan21Pipeline:
             prompt: Text prompt for video generation
             negative_prompt: Negative text prompt
             num_frames: Number of frames to generate
-            guidance_scale: Guidance scale for generation
-            num_inference_steps: Number of inference steps
+            guidance_scale: Guidance scale for generation (overridden to LORA_GUIDANCE_SCALE when LoRA is enabled)
+            num_inference_steps: Number of inference steps (overridden to LORA_NUM_INFERENCE_STEPS when LoRA is enabled)
             height: Output height (auto-calculated if None)
             width: Output width (auto-calculated if None)
             output_path: Output video path (auto-generated if None)
             fps: Frames per second
             seed: Random seed for reproducibility
-            use_causvid_defaults: Use optimized settings for CausVid LoRA
         
         Returns:
             Path to generated video
         """
-        # Apply CausVid optimized defaults if requested
-        if use_causvid_defaults and self.enable_lora:
-            guidance_scale = 1.0  # Lower guidance scale for CausVid
-            num_inference_steps = 6  # Reduced steps for CausVid
-            logger.info(f"Using CausVid optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
+        # Apply LoRA optimized defaults automatically when LoRA is enabled
+        if self.enable_lora:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Validate inputs
         if not validate_image_path(image_path):
@@ -733,9 +731,7 @@ class WanVACEPipelineWrapper:
         output_path: Optional[str] = None,
         fps: int = DEFAULT_FPS,
         seed: Optional[int] = None,
-        conditioning_scale: float = 1.0,
-        # CausVid optimized defaults for VACE
-        use_causvid_defaults: bool = False
+        conditioning_scale: float = 1.0
     ) -> str:
         """
         Generate video from input image with video guidance
@@ -746,24 +742,24 @@ class WanVACEPipelineWrapper:
             prompt: Text prompt for video generation
             negative_prompt: Negative text prompt
             num_frames: Number of frames to generate
-            guidance_scale: Guidance scale for generation
-            num_inference_steps: Number of inference steps
+            guidance_scale: Guidance scale for generation (overridden to LORA_GUIDANCE_SCALE when LoRA is enabled)
+            num_inference_steps: Number of inference steps (overridden to LORA_NUM_INFERENCE_STEPS when LoRA is enabled)
             height: Output height (auto-calculated if None)
             width: Output width (auto-calculated if None)
             output_path: Output video path (auto-generated if None)
             fps: Frames per second
             seed: Random seed for reproducibility
             conditioning_scale: Conditioning scale for VACE
-            use_causvid_defaults: Use optimized settings for CausVid LoRA
         
         Returns:
             Path to generated video
         """
-        # Apply CausVid optimized defaults if requested
-        if use_causvid_defaults and self.enable_lora:
-            guidance_scale = 1.0  # Lower guidance scale for CausVid
-            num_inference_steps = 6  # Reduced steps for CausVid
-            logger.info(f"Using CausVid optimized settings for VACE: guidance_scale={guidance_scale}, steps={num_inference_steps}")
+        # Apply LoRA optimized defaults automatically when LoRA is enabled
+        if self.enable_lora:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"VACE LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Validate inputs
         if not validate_image_path(image_path):

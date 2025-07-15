@@ -16,6 +16,10 @@ DEFAULT_GUIDANCE_SCALE = 5.0
 DEFAULT_NUM_INFERENCE_STEPS = 50
 DEFAULT_FPS = 24
 
+# LoRA-specific Parameters (for CausVid LoRA)
+LORA_GUIDANCE_SCALE = 1.0  # CFG Scale for LoRA models
+LORA_NUM_INFERENCE_STEPS = 8  # Inference Steps for LoRA models
+
 # Resolution Settings
 DEFAULT_HEIGHT = 480
 DEFAULT_WIDTH = 720
