@@ -36,6 +36,12 @@ from utils import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add LoRA configuration constants at the top of the file
+CAUSVID_LORA_PATH = "Kijai/WanVideo_comfy"
+CAUSVID_LORA_FILENAME = "Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors"
+CAUSVID_ADAPTER_NAME = "causvid"
+CAUSVID_STRENGTH = 0.5  # Recommended: 0.25–1.0, 0.5 is typical
+
 
 class Wan21Pipeline:
     """
@@ -54,7 +60,13 @@ class Wan21Pipeline:
         enable_sequential_cpu_offload: bool = False,
         cache_dir: Optional[str] = None,
         local_files_only: bool = False,
-        revision: str = "main"
+        revision: str = "main",
+        # LoRA configuration parameters
+        enable_lora: bool = True,
+        lora_path: str = CAUSVID_LORA_PATH,
+        lora_filename: str = CAUSVID_LORA_FILENAME,
+        lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
+        lora_strength: float = CAUSVID_STRENGTH
     ):
         """
         Initialize Wan2.1 I2V Pipeline
@@ -71,6 +83,11 @@ class Wan21Pipeline:
             cache_dir: Cache directory for model downloads
             local_files_only: Use only local files
             revision: Model revision
+            enable_lora: Enable LoRA loading
+            lora_path: LoRA model path or ID
+            lora_filename: LoRA filename (for subfolder access)
+            lora_adapter_name: LoRA adapter name
+            lora_strength: LoRA strength/weight (0.25-1.0)
         """
         self.model_id = model_id
         self.torch_dtype = get_torch_dtype(torch_dtype)
@@ -84,6 +101,13 @@ class Wan21Pipeline:
         self.local_files_only = local_files_only
         self.revision = revision
         
+        # LoRA configuration
+        self.enable_lora = enable_lora
+        self.lora_path = lora_path
+        self.lora_filename = lora_filename
+        self.lora_adapter_name = lora_adapter_name
+        self.lora_strength = lora_strength
+        
         # Initialize components
         self.pipe = None
         self.image_encoder = None
@@ -96,6 +120,8 @@ class Wan21Pipeline:
         log_system_info()
         
         logger.info("Wan21Pipeline initialized successfully")
+        if self.enable_lora:
+            logger.info(f"LoRA enabled: {self.lora_path}/{self.lora_filename} (strength: {self.lora_strength})")
     
     def _get_local_model_path(self) -> str:
         """Get local model path based on model_id."""
@@ -134,7 +160,7 @@ class Wan21Pipeline:
                 local_model_path,
                 subfolder="image_encoder",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -144,7 +170,7 @@ class Wan21Pipeline:
                 local_model_path,
                 subfolder="vae",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -155,9 +181,25 @@ class Wan21Pipeline:
                 vae=self.vae,
                 image_encoder=self.image_encoder,
                 torch_dtype=self.torch_dtype,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
+            
+            # Load CausVid LoRA (if enabled)
+            if self.enable_lora:
+                logger.info(f"Loading CausVid LoRA: {self.lora_path}/{self.lora_filename}")
+                try:
+                    self.pipe.load_lora_weights(
+                        self.lora_path, 
+                        weight_name=self.lora_filename,
+                        adapter_name=self.lora_adapter_name
+                    )
+                    self.pipe.set_adapters([self.lora_adapter_name], adapter_weights=[self.lora_strength])
+                    logger.info(f"LoRA loaded successfully with strength: {self.lora_strength}")
+                except Exception as e:
+                    logger.warning(f"Failed to load LoRA: {e}")
+                    logger.warning("Continuing without LoRA...")
+                    self.enable_lora = False
             
             # Apply optimizations
             if self.enable_optimizations:
@@ -214,7 +256,9 @@ class Wan21Pipeline:
         width: Optional[int] = None,
         output_path: Optional[str] = None,
         fps: int = DEFAULT_FPS,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        # CausVid optimized defaults
+        use_causvid_defaults: bool = False
     ) -> str:
         """
         Generate video from input image
@@ -231,10 +275,17 @@ class Wan21Pipeline:
             output_path: Output video path (auto-generated if None)
             fps: Frames per second
             seed: Random seed for reproducibility
+            use_causvid_defaults: Use optimized settings for CausVid LoRA
         
         Returns:
             Path to generated video
         """
+        # Apply CausVid optimized defaults if requested
+        if use_causvid_defaults and self.enable_lora:
+            guidance_scale = 1.0  # Lower guidance scale for CausVid
+            num_inference_steps = 6  # Reduced steps for CausVid
+            logger.info(f"Using CausVid optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
+        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
@@ -341,7 +392,7 @@ class Wan21Pipeline:
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information."""
-        return {
+        info = {
             "model_id": self.model_id,
             "torch_dtype": str(self.torch_dtype),
             "device": self.device,
@@ -349,8 +400,19 @@ class Wan21Pipeline:
             "enable_attention_slicing": self.enable_attention_slicing,
             "enable_vae_slicing": self.enable_vae_slicing,
             "enable_model_cpu_offload": self.enable_model_cpu_offload,
-            "enable_sequential_cpu_offload": self.enable_sequential_cpu_offload
+            "enable_sequential_cpu_offload": self.enable_sequential_cpu_offload,
+            "enable_lora": self.enable_lora
         }
+        
+        if self.enable_lora:
+            info.update({
+                "lora_path": self.lora_path,
+                "lora_filename": self.lora_filename,
+                "lora_adapter_name": self.lora_adapter_name,
+                "lora_strength": self.lora_strength
+            })
+        
+        return info
 
 
 class WanVACEPipelineWrapper:
@@ -366,7 +428,13 @@ class WanVACEPipelineWrapper:
         enable_optimizations: bool = True,
         cache_dir: Optional[str] = None,
         local_files_only: bool = False,
-        revision: str = "main"
+        revision: str = "main",
+        # LoRA configuration parameters
+        enable_lora: bool = True,
+        lora_path: str = CAUSVID_LORA_PATH,
+        lora_filename: str = CAUSVID_LORA_FILENAME,
+        lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
+        lora_strength: float = CAUSVID_STRENGTH
     ):
         """
         Initialize Wan2.1 VACE Pipeline
@@ -379,6 +447,11 @@ class WanVACEPipelineWrapper:
             cache_dir: Cache directory for model downloads
             local_files_only: Use only local files
             revision: Model revision
+            enable_lora: Enable LoRA loading
+            lora_path: LoRA model path or ID
+            lora_filename: LoRA filename (for subfolder access)
+            lora_adapter_name: LoRA adapter name
+            lora_strength: LoRA strength/weight (0.25-1.0)
         """
         self.model_id = model_id
         self.torch_dtype = get_torch_dtype(torch_dtype)
@@ -387,6 +460,13 @@ class WanVACEPipelineWrapper:
         self.cache_dir = cache_dir
         self.local_files_only = local_files_only
         self.revision = revision
+        
+        # LoRA configuration
+        self.enable_lora = enable_lora
+        self.lora_path = lora_path
+        self.lora_filename = lora_filename
+        self.lora_adapter_name = lora_adapter_name
+        self.lora_strength = lora_strength
         
         # Initialize components
         self.pipe = None
@@ -399,6 +479,8 @@ class WanVACEPipelineWrapper:
         log_system_info()
         
         logger.info("WanVACEPipelineWrapper initialized successfully")
+        if self.enable_lora:
+            logger.info(f"VACE LoRA enabled: {self.lora_path}/{self.lora_filename} (strength: {self.lora_strength})")
     
     def _get_local_model_path(self) -> str:
         """Get local model path for VACE model."""
@@ -429,7 +511,7 @@ class WanVACEPipelineWrapper:
                 local_model_path,
                 subfolder="vae",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -439,9 +521,25 @@ class WanVACEPipelineWrapper:
                 local_model_path,
                 vae=self.vae,
                 torch_dtype=self.torch_dtype,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
+            
+            # Load CausVid LoRA for VACE (if enabled)
+            if self.enable_lora:
+                logger.info(f"Loading CausVid LoRA for VACE: {self.lora_path}/{self.lora_filename}")
+                try:
+                    self.pipe.load_lora_weights(
+                        self.lora_path, 
+                        weight_name=self.lora_filename,
+                        adapter_name=self.lora_adapter_name
+                    )
+                    self.pipe.set_adapters([self.lora_adapter_name], adapter_weights=[self.lora_strength])
+                    logger.info(f"VACE LoRA loaded successfully with strength: {self.lora_strength}")
+                except Exception as e:
+                    logger.warning(f"Failed to load VACE LoRA: {e}")
+                    logger.warning("Continuing VACE without LoRA...")
+                    self.enable_lora = False
             
             # Apply optimizations
             if self.enable_optimizations:
@@ -635,7 +733,9 @@ class WanVACEPipelineWrapper:
         output_path: Optional[str] = None,
         fps: int = DEFAULT_FPS,
         seed: Optional[int] = None,
-        conditioning_scale: float = 1.0
+        conditioning_scale: float = 1.0,
+        # CausVid optimized defaults for VACE
+        use_causvid_defaults: bool = False
     ) -> str:
         """
         Generate video from input image with video guidance
@@ -654,10 +754,17 @@ class WanVACEPipelineWrapper:
             fps: Frames per second
             seed: Random seed for reproducibility
             conditioning_scale: Conditioning scale for VACE
+            use_causvid_defaults: Use optimized settings for CausVid LoRA
         
         Returns:
             Path to generated video
         """
+        # Apply CausVid optimized defaults if requested
+        if use_causvid_defaults and self.enable_lora:
+            guidance_scale = 1.0  # Lower guidance scale for CausVid
+            num_inference_steps = 6  # Reduced steps for CausVid
+            logger.info(f"Using CausVid optimized settings for VACE: guidance_scale={guidance_scale}, steps={num_inference_steps}")
+        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
@@ -791,9 +898,20 @@ class WanVACEPipelineWrapper:
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get VACE model information."""
-        return {
+        info = {
             "model_id": self.model_id,
             "torch_dtype": str(self.torch_dtype),
             "device": self.device,
-            "enable_optimizations": self.enable_optimizations
-        } 
+            "enable_optimizations": self.enable_optimizations,
+            "enable_lora": self.enable_lora
+        }
+        
+        if self.enable_lora:
+            info.update({
+                "lora_path": self.lora_path,
+                "lora_filename": self.lora_filename,
+                "lora_adapter_name": self.lora_adapter_name,
+                "lora_strength": self.lora_strength
+            })
+        
+        return info 
