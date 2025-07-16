@@ -7,13 +7,15 @@ Provides a web interface for video generation
 import os
 import json
 import logging
+import torch
+import gc
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 import uuid
 from pathlib import Path
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories
+from utils import setup_directories, clear_gpu_memory
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -154,6 +156,9 @@ def generate_video():
             logger.info(f"VACE video generated successfully: {result_path}")
             logger.info(f"File size: {file_size:.1f} MB")
             
+            # Clear GPU memory after VACE generation
+            clear_gpu_memory()
+            
         else:
             # Generate both I2V and VACE videos
             logger.info("Generating both I2V and VACE videos")
@@ -183,40 +188,18 @@ def generate_video():
             logger.info(f"I2V video generated successfully: {i2v_result_path}")
             logger.info(f"File size: {i2v_file_size:.1f} MB")
             
+            # Clear GPU memory after I2V generation
+            clear_gpu_memory()
+
             # Generate VACE video (without video guidance)
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
             vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
-            
-            # Create a simple motion video for VACE guidance
-            import cv2
-            import numpy as np
-            from PIL import Image
-            
-            # Create a simple horizontal motion video
-            temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_motion_{uuid.uuid4()}.mp4")
-            
-            # Load the input image
-            img = cv2.imread(upload_path)
-            img = cv2.resize(img, (width, height))
-            
-            # Create video writer
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(temp_video_path, fourcc, 8.0, (width, height))
-            
-            # Create frames with horizontal motion
-            for i in range(16):  # 16 frames for motion
-                # Create a frame with slight horizontal shift
-                shift = int((i / 15.0) * 20)  # 20 pixel shift over 16 frames
-                frame = np.roll(img, shift, axis=1)
-                out.write(frame)
-            
-            out.release()
             
             try:
                 with WanVACEPipelineWrapper() as pipeline:
                     vace_result_path = pipeline.generate_video_with_guidance(
                         image_path=upload_path,
-                        video_path=temp_video_path,
+                        video_path=None,  # No video guidance
                         prompt=positive_prompt,
                         negative_prompt=negative_prompt,
                         width=width,
@@ -228,8 +211,8 @@ def generate_video():
                 generated_videos.append({
                     'filename': vace_output_filename,
                     'file_size_mb': round(vace_file_size, 1),
-                    'model_type': "VACE (Motion-Guided)",
-                    'description': "Motion-guided generation using VACE pipeline"
+                    'model_type': "VACE (Image-Only)",
+                    'description': "Image-only generation using VACE pipeline"
                 })
                 
                 logger.info(f"VACE video generated successfully: {vace_result_path}")
@@ -239,9 +222,8 @@ def generate_video():
                 logger.error(f"Failed to generate VACE video: {e}")
                 # Continue with just I2V video if VACE fails
             
-            # Clean up temporary video
-            if os.path.exists(temp_video_path):
-                os.remove(temp_video_path)
+            # Clear GPU memory after VACE generation
+            clear_gpu_memory()
         
         return jsonify({
             'success': True,

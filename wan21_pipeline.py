@@ -720,7 +720,7 @@ class WanVACEPipelineWrapper:
     def generate_video_with_guidance(
         self,
         image_path: str,
-        video_path: str,
+        video_path: Optional[str] = None,
         prompt: str = DEFAULT_PROMPT,
         negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
         num_frames: int = DEFAULT_NUM_FRAMES,
@@ -734,11 +734,11 @@ class WanVACEPipelineWrapper:
         conditioning_scale: float = 1.0
     ) -> str:
         """
-        Generate video from input image with video guidance
+        Generate video from input image with optional video guidance
         
         Args:
             image_path: Path to input image
-            video_path: Path to guidance video
+            video_path: Path to guidance video (optional - if None, uses image-only generation)
             prompt: Text prompt for video generation
             negative_prompt: Negative text prompt
             num_frames: Number of frames to generate
@@ -765,15 +765,19 @@ class WanVACEPipelineWrapper:
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
         
-        if not os.path.exists(video_path):
-            raise ValueError(f"Video file not found: {video_path}")
-        
-        # Check file size
-        file_size = os.path.getsize(video_path)
-        if file_size == 0:
-            raise ValueError(f"Video file is empty: {video_path}")
-        
-        logger.info(f"Video file size: {file_size / (1024*1024):.1f} MB")
+        # Handle optional video path
+        if video_path is not None:
+            if not os.path.exists(video_path):
+                raise ValueError(f"Video file not found: {video_path}")
+            
+            # Check file size
+            file_size = os.path.getsize(video_path)
+            if file_size == 0:
+                raise ValueError(f"Video file is empty: {video_path}")
+            
+            logger.info(f"Video file size: {file_size / (1024*1024):.1f} MB")
+        else:
+            logger.info("No video guidance provided - using image-only generation")
         
         # Load model if not loaded
         if self.pipe is None:
@@ -794,22 +798,6 @@ class WanVACEPipelineWrapper:
         if height is None or width is None:
             height, width = calculate_optimal_dimensions(image)
             logger.info(f"Calculated dimensions: {width}x{height}")
-        
-        # Extract frames from guidance video
-        logger.info(f"Extracting frames from guidance video: {video_path}")
-        try:
-            video_frames = self.extract_video_frames(video_path, num_frames)
-        except Exception as e:
-            logger.error(f"Failed to extract frames from video: {e}")
-            raise ValueError(f"Video processing failed. Please ensure the video file is valid and not corrupted. Error: {e}")
-        
-        if len(video_frames) < 2:
-            raise ValueError("Video must have at least 2 frames")
-        
-        # Prepare video and mask for VACE
-        first_frame = video_frames[0]
-        last_frame = video_frames[-1]
-        video, mask = self.prepare_video_and_mask(first_frame, last_frame, height, width, num_frames)
         
         # Generate output path
         if output_path is None:
@@ -832,19 +820,50 @@ class WanVACEPipelineWrapper:
         
         try:
             with torch.no_grad():
-                output = self.pipe(
-                    video=video,
-                    mask=mask,
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    height=height,
-                    width=width,
-                    num_frames=num_frames,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    conditioning_scale=conditioning_scale,
-                    generator=torch.Generator().manual_seed(seed) if seed else None
-                ).frames[0]
+                if video_path is not None:
+                    # Extract frames from guidance video
+                    logger.info(f"Extracting frames from guidance video: {video_path}")
+                    try:
+                        video_frames = self.extract_video_frames(video_path, num_frames)
+                    except Exception as e:
+                        logger.error(f"Failed to extract frames from video: {e}")
+                        raise ValueError(f"Video processing failed. Please ensure the video file is valid and not corrupted. Error: {e}")
+                    
+                    if len(video_frames) < 2:
+                        raise ValueError("Video must have at least 2 frames")
+                    
+                    # Prepare video and mask for VACE
+                    first_frame = video_frames[0]
+                    last_frame = video_frames[-1]
+                    video, mask = self.prepare_video_and_mask(first_frame, last_frame, height, width, num_frames)
+                    
+                    output = self.pipe(
+                        video=video,
+                        mask=mask,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        height=height,
+                        width=width,
+                        num_frames=num_frames,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                        conditioning_scale=conditioning_scale,
+                        generator=torch.Generator().manual_seed(seed) if seed else None
+                    ).frames[0]
+                else:
+                    # Image-only generation (no video guidance)
+                    logger.info("Using image-only generation without video guidance")
+                    output = self.pipe(
+                        image=image,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        height=height,
+                        width=width,
+                        num_frames=num_frames,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        generator=torch.Generator().manual_seed(seed) if seed else None
+                    ).frames[0]
             
             # Export video
             logger.info(f"Exporting VACE video to: {output_path}")
