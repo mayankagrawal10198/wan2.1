@@ -849,21 +849,21 @@ class WanVACEPipelineWrapper:
                         guidance_scale=guidance_scale,
                         conditioning_scale=conditioning_scale,
                         generator=torch.Generator().manual_seed(seed) if seed else None
-                    ).frames[0]
+                    ).frames[0]  # frames[0] gets the first (and only) video from output
                 else:
                     # Image-only generation (no video guidance)
                     logger.info("Using image-only generation without video guidance")
                     output = self.pipe(
-                        image=image,
                         prompt=prompt,
                         negative_prompt=negative_prompt,
+                        reference_images=[image],  # Pass image as reference_images
                         height=height,
                         width=width,
                         num_frames=num_frames,
                         guidance_scale=guidance_scale,
                         num_inference_steps=num_inference_steps,
                         generator=torch.Generator().manual_seed(seed) if seed else None
-                    ).frames[0]
+                    ).frames[0]  # frames[0] gets the first (and only) video from output
             
             # Export video
             logger.info(f"Exporting VACE video to: {output_path}")
