@@ -189,7 +189,7 @@ class Wan21Pipeline:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA: {self.lora_path}/{self.lora_filename}")
                 try:
-                    # Check if PEFT is available
+                    # Check if PEFT is available (required by diffusers for LoRA loading)
                     try:
                         import peft
                         logger.info("PEFT backend is available")
@@ -198,12 +198,14 @@ class Wan21Pipeline:
                         logger.warning("Install PEFT with: pip install peft")
                         raise ImportError("PEFT backend is required for LoRA loading")
                     
+                    # Load LoRA weights following the reference pattern
                     self.pipe.load_lora_weights(
                         self.lora_path, 
                         weight_name=self.lora_filename,
                         adapter_name=self.lora_adapter_name
                     )
-                    self.pipe.set_adapters([self.lora_adapter_name], adapter_weights=[self.lora_strength])
+                    # Set adapter with strength as a float (not in a list)
+                    self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
                     logger.info(f"LoRA loaded successfully with strength: {self.lora_strength}")
                 except Exception as e:
                     logger.warning(f"Failed to load LoRA: {e}")
@@ -537,7 +539,7 @@ class WanVACEPipelineWrapper:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA for VACE: {self.lora_path}/{self.lora_filename}")
                 try:
-                    # Check if PEFT is available
+                    # Check if PEFT is available (required by diffusers for LoRA loading)
                     try:
                         import peft
                         logger.info("PEFT backend is available")
@@ -546,12 +548,14 @@ class WanVACEPipelineWrapper:
                         logger.warning("Install PEFT with: pip install peft")
                         raise ImportError("PEFT backend is required for LoRA loading")
                     
+                    # Load LoRA weights following the reference pattern
                     self.pipe.load_lora_weights(
                         self.lora_path, 
                         weight_name=self.lora_filename,
                         adapter_name=self.lora_adapter_name
                     )
-                    self.pipe.set_adapters([self.lora_adapter_name], adapter_weights=[self.lora_strength])
+                    # Set adapter with strength as a float (not in a list)
+                    self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
                     logger.info(f"VACE LoRA loaded successfully with strength: {self.lora_strength}")
                 except Exception as e:
                     logger.warning(f"Failed to load VACE LoRA: {e}")
