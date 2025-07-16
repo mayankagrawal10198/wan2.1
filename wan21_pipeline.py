@@ -569,6 +569,16 @@ class WanVACEPipelineWrapper:
             logger.info("Enabling VAE slicing...")
             self.pipe.vae.enable_slicing()
         
+        # Enable model CPU offloading for VACE
+        if hasattr(self.pipe, 'enable_model_cpu_offload'):
+            logger.info("Enabling model CPU offload for VACE...")
+            self.pipe.enable_model_cpu_offload()
+        
+        # Enable sequential CPU offloading for VACE
+        if hasattr(self.pipe, 'enable_sequential_cpu_offload'):
+            logger.info("Enabling sequential CPU offload for VACE...")
+            self.pipe.enable_sequential_cpu_offload()
+        
         logger.info("VACE memory optimizations applied successfully")
     
     def extract_video_frames(self, video_path: str, num_frames: int = 81) -> List[Image.Image]:
@@ -799,6 +809,14 @@ class WanVACEPipelineWrapper:
             height, width = calculate_optimal_dimensions(image)
             logger.info(f"Calculated dimensions: {width}x{height}")
         
+        # Memory-aware parameter adjustment for VACE
+        # VACE is more memory-intensive, so reduce parameters if needed
+        original_num_frames = num_frames
+        if height >= 720 or width >= 720:
+            # For high resolution, reduce frames to save memory
+            num_frames = min(num_frames, 60)  # Reduce from 121 to 60 for high res
+            logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
+        
         # Generate output path
         if output_path is None:
             output_path = get_output_filename(image_path, suffix="_vace")
@@ -816,6 +834,18 @@ class WanVACEPipelineWrapper:
         
         # Generate video
         logger.info("Starting VACE video generation...")
+        
+        # Check available memory before generation
+        gpu_info = check_gpu_memory()
+        if gpu_info and gpu_info['free_memory'] < 5.0:  # Less than 5GB free
+            logger.warning(f"Low GPU memory available: {gpu_info['free_memory']:.1f} GB")
+            logger.warning("Applying additional memory optimizations...")
+            # Force garbage collection
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        
         start_time = time.time()
         
         try:

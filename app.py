@@ -190,37 +190,56 @@ def generate_video():
             
             # Clear GPU memory after I2V generation
             clear_gpu_memory()
+            
+            # Additional memory management for VACE
+            import time
+            logger.info("Waiting for memory cleanup before VACE generation...")
+            time.sleep(2)  # Give time for memory cleanup
+            clear_gpu_memory()  # Clear again after delay
+            
+            # Check memory before VACE generation
+            from utils import check_gpu_memory
+            gpu_info = check_gpu_memory()
+            if gpu_info and gpu_info['free_memory'] < 3.0:  # Less than 3GB free
+                logger.warning(f"Insufficient GPU memory for VACE: {gpu_info['free_memory']:.1f} GB available")
+                logger.warning("Skipping VACE generation to prevent OOM error")
+                vace_skip = True
+            else:
+                vace_skip = False
 
             # Generate VACE video (without video guidance)
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
             vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
             
-            try:
-                with WanVACEPipelineWrapper() as pipeline:
-                    vace_result_path = pipeline.generate_video_with_guidance(
-                        image_path=upload_path,
-                        video_path=None,  # No video guidance
-                        prompt=positive_prompt,
-                        negative_prompt=negative_prompt,
-                        width=width,
-                        height=height,
-                        output_path=vace_output_path
-                    )
-                
-                vace_file_size = os.path.getsize(vace_result_path) / (1024 * 1024)  # MB
-                generated_videos.append({
-                    'filename': vace_output_filename,
-                    'file_size_mb': round(vace_file_size, 1),
-                    'model_type': "VACE (Image-Only)",
-                    'description': "Image-only generation using VACE pipeline"
-                })
-                
-                logger.info(f"VACE video generated successfully: {vace_result_path}")
-                logger.info(f"File size: {vace_file_size:.1f} MB")
-                
-            except Exception as e:
-                logger.error(f"Failed to generate VACE video: {e}")
-                # Continue with just I2V video if VACE fails
+            if not vace_skip:
+                try:
+                    with WanVACEPipelineWrapper() as pipeline:
+                        vace_result_path = pipeline.generate_video_with_guidance(
+                            image_path=upload_path,
+                            video_path=None,  # No video guidance
+                            prompt=positive_prompt,
+                            negative_prompt=negative_prompt,
+                            width=width,
+                            height=height,
+                            output_path=vace_output_path
+                        )
+                    
+                    vace_file_size = os.path.getsize(vace_result_path) / (1024 * 1024)  # MB
+                    generated_videos.append({
+                        'filename': vace_output_filename,
+                        'file_size_mb': round(vace_file_size, 1),
+                        'model_type': "VACE (Image-Only)",
+                        'description': "Image-only generation using VACE pipeline"
+                    })
+                    
+                    logger.info(f"VACE video generated successfully: {vace_result_path}")
+                    logger.info(f"File size: {vace_file_size:.1f} MB")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate VACE video: {e}")
+                    # Continue with just I2V video if VACE fails
+            else:
+                logger.info("VACE generation skipped due to insufficient memory")
             
             # Clear GPU memory after VACE generation
             clear_gpu_memory()
