@@ -189,6 +189,15 @@ class Wan21Pipeline:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA: {self.lora_path}/{self.lora_filename}")
                 try:
+                    # Check if PEFT is available
+                    try:
+                        import peft
+                        logger.info("PEFT backend is available")
+                    except ImportError:
+                        logger.warning("PEFT backend is not available. LoRA loading requires PEFT to be installed.")
+                        logger.warning("Install PEFT with: pip install peft")
+                        raise ImportError("PEFT backend is required for LoRA loading")
+                    
                     self.pipe.load_lora_weights(
                         self.lora_path, 
                         weight_name=self.lora_filename,
@@ -458,6 +467,7 @@ class WanVACEPipelineWrapper:
         self.cache_dir = cache_dir
         self.local_files_only = local_files_only
         self.revision = revision
+        self.enable_sequential_cpu_offload = False  # Will be set during optimization
         
         # LoRA configuration
         self.enable_lora = enable_lora
@@ -527,6 +537,15 @@ class WanVACEPipelineWrapper:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA for VACE: {self.lora_path}/{self.lora_filename}")
                 try:
+                    # Check if PEFT is available
+                    try:
+                        import peft
+                        logger.info("PEFT backend is available")
+                    except ImportError:
+                        logger.warning("PEFT backend is not available. LoRA loading requires PEFT to be installed.")
+                        logger.warning("Install PEFT with: pip install peft")
+                        raise ImportError("PEFT backend is required for LoRA loading")
+                    
                     self.pipe.load_lora_weights(
                         self.lora_path, 
                         weight_name=self.lora_filename,
@@ -545,6 +564,7 @@ class WanVACEPipelineWrapper:
             
             # Move to device
             self.pipe.to(self.device)
+            logger.info(f"VACE pipeline moved to {self.device}")
             
             logger.info("VACE model loaded successfully!")
             
@@ -575,9 +595,11 @@ class WanVACEPipelineWrapper:
             self.pipe.enable_model_cpu_offload()
         
         # Enable sequential CPU offloading for VACE
-        if hasattr(self.pipe, 'enable_sequential_cpu_offload'):
-            logger.info("Enabling sequential CPU offload for VACE...")
-            self.pipe.enable_sequential_cpu_offload()
+        # Disabled due to GPU compatibility issues
+        # if hasattr(self.pipe, 'enable_sequential_cpu_offload'):
+        #     logger.info("Enabling sequential CPU offload for VACE...")
+        #     self.pipe.enable_sequential_cpu_offload()
+        #     self.enable_sequential_cpu_offload = True
         
         logger.info("VACE memory optimizations applied successfully")
     
