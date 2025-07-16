@@ -14,7 +14,7 @@ import imageio
 from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
 from PIL import Image
-
+import peft
 from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanVACEPipeline as DiffusersWanVACEPipeline
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 from diffusers.utils import export_to_video, load_image
@@ -189,15 +189,6 @@ class Wan21Pipeline:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA: {self.lora_path}/{self.lora_filename}")
                 try:
-                    # Check if PEFT is available (required by diffusers for LoRA loading)
-                    try:
-                        import peft
-                        logger.info("PEFT backend is available")
-                    except ImportError:
-                        logger.warning("PEFT backend is not available. LoRA loading requires PEFT to be installed.")
-                        logger.warning("Install PEFT with: pip install peft")
-                        raise ImportError("PEFT backend is required for LoRA loading")
-                    
                     # Load LoRA weights following the reference pattern
                     self.pipe.load_lora_weights(
                         self.lora_path, 
@@ -539,15 +530,6 @@ class WanVACEPipelineWrapper:
             if self.enable_lora:
                 logger.info(f"Loading CausVid LoRA for VACE: {self.lora_path}/{self.lora_filename}")
                 try:
-                    # Check if PEFT is available (required by diffusers for LoRA loading)
-                    try:
-                        import peft
-                        logger.info("PEFT backend is available")
-                    except ImportError:
-                        logger.warning("PEFT backend is not available. LoRA loading requires PEFT to be installed.")
-                        logger.warning("Install PEFT with: pip install peft")
-                        raise ImportError("PEFT backend is required for LoRA loading")
-                    
                     # Load LoRA weights following the reference pattern
                     self.pipe.load_lora_weights(
                         self.lora_path, 
