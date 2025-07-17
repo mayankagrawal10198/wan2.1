@@ -107,6 +107,7 @@ class Wan21Pipeline:
         self.lora_filename = lora_filename
         self.lora_adapter_name = lora_adapter_name
         self.lora_strength = lora_strength
+        self.lora_loaded_successfully = False  # Track if LoRA was successfully loaded
         
         # Initialize components
         self.pipe = None
@@ -198,10 +199,12 @@ class Wan21Pipeline:
                     # Set adapter with strength as a float (not in a list)
                     self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
                     logger.info(f"LoRA loaded successfully with strength: {self.lora_strength}")
+                    self.lora_loaded_successfully = True
                 except Exception as e:
                     logger.warning(f"Failed to load LoRA: {e}")
                     logger.warning("Continuing without LoRA...")
                     self.enable_lora = False
+                    self.lora_loaded_successfully = False
             
             # Apply optimizations
             if self.enable_optimizations:
@@ -279,13 +282,6 @@ class Wan21Pipeline:
         Returns:
             Path to generated video
         """
-        # Apply LoRA optimized defaults automatically when LoRA is enabled
-        if self.enable_lora:
-            # Override with LoRA-optimized settings from config
-            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
-            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
-            logger.info(f"LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
-        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
@@ -296,6 +292,13 @@ class Wan21Pipeline:
         # Load model if not loaded
         if self.pipe is None:
             self.load_model()
+        
+        # Apply LoRA optimized defaults only when LoRA was successfully loaded
+        if self.enable_lora and self.lora_loaded_successfully:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Set random seed
         if seed is not None:
@@ -472,6 +475,7 @@ class WanVACEPipelineWrapper:
         self.lora_filename = lora_filename
         self.lora_adapter_name = lora_adapter_name
         self.lora_strength = lora_strength
+        self.lora_loaded_successfully = False  # Track if LoRA was successfully loaded
         
         # Initialize components
         self.pipe = None
@@ -543,10 +547,12 @@ class WanVACEPipelineWrapper:
                     # Set adapter with strength as a float (not in a list)
                     self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
                     logger.info(f"VACE LoRA loaded successfully with strength: {self.lora_strength}")
+                    self.lora_loaded_successfully = True
                 except Exception as e:
                     logger.warning(f"Failed to load VACE LoRA: {e}")
                     logger.warning("Continuing VACE without LoRA...")
                     self.enable_lora = False
+                    self.lora_loaded_successfully = False
             
             # Apply optimizations
             if self.enable_optimizations:
@@ -776,13 +782,6 @@ class WanVACEPipelineWrapper:
         Returns:
             Path to generated video
         """
-        # Apply LoRA optimized defaults automatically when LoRA is enabled
-        if self.enable_lora:
-            # Override with LoRA-optimized settings from config
-            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
-            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
-            logger.info(f"VACE LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
-        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
@@ -804,6 +803,13 @@ class WanVACEPipelineWrapper:
         # Load model if not loaded
         if self.pipe is None:
             self.load_model()
+        
+        # Apply LoRA optimized defaults only when LoRA was successfully loaded
+        if self.enable_lora and self.lora_loaded_successfully:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"VACE LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Set random seed
         if seed is not None:
