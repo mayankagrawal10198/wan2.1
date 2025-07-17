@@ -380,6 +380,10 @@ class Wan21Pipeline:
         # Force garbage collection
         gc.collect()
         
+        # Wait 2 seconds for garbage collection to complete
+        logger.info("Waiting 2 seconds for garbage collection...")
+        time.sleep(2)
+        
         logger.info("Cleanup completed")
     
     def __enter__(self):
@@ -938,6 +942,10 @@ class WanVACEPipelineWrapper:
         
         # Force garbage collection
         gc.collect()
+        
+        # Wait 2 seconds for garbage collection to complete
+        logger.info("Waiting 2 seconds for garbage collection...")
+        time.sleep(2)
         
         logger.info("VACE cleanup completed")
     
