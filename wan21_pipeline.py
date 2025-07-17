@@ -354,18 +354,12 @@ class Wan21Pipeline:
         except Exception as e:
             logger.error(f"Error during video generation: {e}")
             raise
-        finally:
-            # Clear GPU memory
-            clear_gpu_memory()
     
 
     
     def cleanup(self):
         """Clean up resources and free memory."""
         logger.info("Cleaning up resources...")
-        
-        # Clear GPU memory
-        clear_gpu_memory()
         
         # Delete pipeline components
         if self.pipe is not None:
@@ -382,10 +376,6 @@ class Wan21Pipeline:
         
         # Force garbage collection
         gc.collect()
-        
-        # Wait 2 seconds for garbage collection to complete
-        logger.info("Waiting 2 seconds for garbage collection...")
-        time.sleep(2)
         
         logger.info("Cleanup completed")
     
@@ -926,16 +916,10 @@ class WanVACEPipelineWrapper:
         except Exception as e:
             logger.error(f"Error during VACE video generation: {e}")
             raise
-        finally:
-            # Clear GPU memory
-            clear_gpu_memory()
     
     def cleanup(self):
         """Clean up resources and free memory."""
         logger.info("Cleaning up VACE resources...")
-        
-        # Clear GPU memory
-        clear_gpu_memory()
         
         # Delete pipeline components
         if self.pipe is not None:
@@ -948,10 +932,6 @@ class WanVACEPipelineWrapper:
         
         # Force garbage collection
         gc.collect()
-        
-        # Wait 2 seconds for garbage collection to complete
-        logger.info("Waiting 2 seconds for garbage collection...")
-        time.sleep(2)
         
         logger.info("VACE cleanup completed")
     

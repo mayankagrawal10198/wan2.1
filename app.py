@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Flask Web Application for Wan2.1 I2V Model
+FastAPI Web Application for Wan2.1 I2V Model
 Provides a web interface for video generation
 """
 
@@ -9,10 +9,16 @@ import json
 import logging
 import torch
 import gc
-from flask import Flask, request, jsonify, render_template, send_from_directory
-from werkzeug.utils import secure_filename
 import uuid
 from pathlib import Path
+from typing import List, Optional
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+from pydantic import BaseModel
+import uvicorn
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
 from utils import setup_directories, clear_gpu_memory
@@ -21,10 +27,16 @@ from utils import setup_directories, clear_gpu_memory
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for videos
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'output'
+app = FastAPI(
+    title="Wan2.1 Video Generation API",
+    description="API for generating videos from images using Wan2.1 I2V and VACE models",
+    version="1.0.0"
+)
+
+# Configuration
+UPLOAD_FOLDER = 'uploads'
+OUTPUT_FOLDER = 'output'
+MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
 
 # Allowed file extensions
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}
@@ -44,13 +56,39 @@ RESOLUTION_PRESETS = {
     }
 }
 
-def allowed_file(filename):
-    """Check if file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+# Pydantic models for request/response
+class VideoGenerationRequest(BaseModel):
+    resolution: str = "480p"
+    positive_prompt: str = "A beautiful scene with gentle movement"
+    negative_prompt: str = "static, blurred, low quality, distorted, ugly"
 
-def allowed_video_file(filename):
-    """Check if video file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
+class GeneratedVideo(BaseModel):
+    filename: str
+    file_size_mb: float
+    model_type: str
+    description: str
+
+class VideoGenerationResponse(BaseModel):
+    success: bool
+    message: str
+    videos: List[GeneratedVideo]
+    resolution: str
+    width: int
+    height: int
+    model_id: str
+    video_guidance: bool
+
+class HealthResponse(BaseModel):
+    status: str
+    message: str
+
+# Setup templates and static files
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+def allowed_file(filename: str, allowed_extensions: set) -> bool:
+    """Check if file extension is allowed."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
 def setup_app_directories():
     """Setup necessary directories for the web app."""
@@ -59,49 +97,66 @@ def setup_app_directories():
         Path(directory).mkdir(exist_ok=True)
         logger.info(f"Created directory: {directory}")
 
-@app.route('/')
-def index():
-    """Serve the main HTML page."""
-    return render_template('index.html')
+def save_upload_file(upload_file: UploadFile, folder: str) -> str:
+    """Save uploaded file and return the file path."""
+    filename = f"{uuid.uuid4()}_{upload_file.filename}"
+    file_path = os.path.join(folder, filename)
+    
+    with open(file_path, "wb") as buffer:
+        content = upload_file.file.read()
+        buffer.write(content)
+    
+    return file_path
 
-@app.route('/generate', methods=['POST'])
-def generate_video():
+@app.get("/", response_class=JSONResponse)
+async def index(request: Request):
+    """Serve the main HTML page."""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.post("/generate", response_model=VideoGenerationResponse)
+async def generate_video(
+    background_tasks: BackgroundTasks,
+    image: UploadFile = File(...),
+    video: Optional[UploadFile] = File(None),
+    resolution: str = Form("480p"),
+    positive_prompt: str = Form("A beautiful scene with gentle movement"),
+    negative_prompt: str = Form("static, blurred, low quality, distorted, ugly")
+):
     """Generate video from uploaded image and prompts."""
     try:
-        # Check if image file was uploaded
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image file provided'}), 400
+        # Validate image file
+        if not image.filename:
+            raise HTTPException(status_code=400, detail="No image file provided")
         
-        file = request.files['image']
-        if file.filename == '':
-            return jsonify({'error': 'No image file selected'}), 400
+        if not allowed_file(image.filename, ALLOWED_IMAGE_EXTENSIONS):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid image file type. Allowed: PNG, JPG, JPEG, BMP, TIFF, WEBP"
+            )
         
-        if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid image file type. Allowed: PNG, JPG, JPEG, BMP, TIFF, WEBP'}), 400
+        # Check file size
+        if image.size and image.size > MAX_CONTENT_LENGTH:
+            raise HTTPException(status_code=400, detail="Image file too large. Max 50MB")
         
-        # Check for optional video file
-        video_file = request.files.get('video')
+        # Handle optional video file
         video_path = None
-        
-        if video_file and video_file.filename != '':
-            if not allowed_video_file(video_file.filename):
-                return jsonify({'error': 'Invalid video file type. Allowed: MP4, AVI, MOV, MKV'}), 400
+        if video and video.filename:
+            if not allowed_file(video.filename, ALLOWED_VIDEO_EXTENSIONS):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid video file type. Allowed: MP4, AVI, MOV, MKV"
+                )
+            
+            if video.size and video.size > MAX_CONTENT_LENGTH:
+                raise HTTPException(status_code=400, detail="Video file too large. Max 50MB")
             
             # Save uploaded video file
-            video_filename = secure_filename(video_file.filename)
-            video_unique_filename = f"{uuid.uuid4()}_{video_filename}"
-            video_path = os.path.join(app.config['UPLOAD_FOLDER'], video_unique_filename)
-            video_file.save(video_path)
+            video_path = save_upload_file(video, UPLOAD_FOLDER)
             logger.info(f"Processing video: {video_path}")
-        
-        # Get form data
-        resolution = request.form.get('resolution', '480p')
-        positive_prompt = request.form.get('positive_prompt', 'A beautiful scene with gentle movement')
-        negative_prompt = request.form.get('negative_prompt', 'static, blurred, low quality, distorted, ugly')
         
         # Validate resolution
         if resolution not in RESOLUTION_PRESETS:
-            return jsonify({'error': 'Invalid resolution. Choose 480p or 720p'}), 400
+            raise HTTPException(status_code=400, detail="Invalid resolution. Choose 480p or 720p")
         
         # Get resolution settings and model ID
         width = RESOLUTION_PRESETS[resolution]['width']
@@ -109,10 +164,7 @@ def generate_video():
         model_id = RESOLUTION_PRESETS[resolution]['model_id']
         
         # Save uploaded image file
-        filename = secure_filename(file.filename)
-        unique_filename = f"{uuid.uuid4()}_{filename}"
-        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(upload_path)
+        upload_path = save_upload_file(image, UPLOAD_FOLDER)
         
         logger.info(f"Processing image: {upload_path}")
         logger.info(f"Resolution: {resolution} ({width}x{height})")
@@ -121,10 +173,6 @@ def generate_video():
         logger.info(f"Negative prompt: {negative_prompt}")
         logger.info(f"Video guidance: {'Yes' if video_path else 'No'}")
         
-        # Generate output filename
-        output_filename = f"generated_{uuid.uuid4()}.mp4"
-        output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
-        
         # Generate videos based on whether video guidance is provided
         generated_videos = []
         
@@ -132,7 +180,7 @@ def generate_video():
             # Use VACE pipeline for video-guided generation
             logger.info("Using VACE pipeline for video-guided generation")
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
-            vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
+            vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
             
             with WanVACEPipelineWrapper() as pipeline:
                 result_path = pipeline.generate_video_with_guidance(
@@ -146,12 +194,12 @@ def generate_video():
                 )
             
             file_size = os.path.getsize(result_path) / (1024 * 1024)  # MB
-            generated_videos.append({
-                'filename': vace_output_filename,
-                'file_size_mb': round(file_size, 1),
-                'model_type': "VACE (Video-Guided)",
-                'description': "Video-guided generation using VACE pipeline"
-            })
+            generated_videos.append(GeneratedVideo(
+                filename=vace_output_filename,
+                file_size_mb=round(file_size, 1),
+                model_type="VACE (Video-Guided)",
+                description="Video-guided generation using VACE pipeline"
+            ))
             
             logger.info(f"VACE video generated successfully: {result_path}")
             logger.info(f"File size: {file_size:.1f} MB")
@@ -165,7 +213,7 @@ def generate_video():
             
             # Generate I2V video
             i2v_output_filename = f"generated_i2v_{uuid.uuid4()}.mp4"
-            i2v_output_path = os.path.join(app.config['OUTPUT_FOLDER'], i2v_output_filename)
+            i2v_output_path = os.path.join(OUTPUT_FOLDER, i2v_output_filename)
             
             with Wan21Pipeline(model_id=model_id) as pipeline:
                 i2v_result_path = pipeline.generate_video(
@@ -178,12 +226,12 @@ def generate_video():
                 )
             
             i2v_file_size = os.path.getsize(i2v_result_path) / (1024 * 1024)  # MB
-            generated_videos.append({
-                'filename': i2v_output_filename,
-                'file_size_mb': round(i2v_file_size, 1),
-                'model_type': "I2V (Image-to-Video)",
-                'description': "Standard image-to-video generation"
-            })
+            generated_videos.append(GeneratedVideo(
+                filename=i2v_output_filename,
+                file_size_mb=round(i2v_file_size, 1),
+                model_type="I2V (Image-to-Video)",
+                description="Standard image-to-video generation"
+            ))
             
             logger.info(f"I2V video generated successfully: {i2v_result_path}")
             logger.info(f"File size: {i2v_file_size:.1f} MB")
@@ -209,7 +257,7 @@ def generate_video():
 
             # Generate VACE video (without video guidance)
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
-            vace_output_path = os.path.join(app.config['OUTPUT_FOLDER'], vace_output_filename)
+            vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
             
             if not vace_skip:
                 try:
@@ -225,12 +273,12 @@ def generate_video():
                         )
                     
                     vace_file_size = os.path.getsize(vace_result_path) / (1024 * 1024)  # MB
-                    generated_videos.append({
-                        'filename': vace_output_filename,
-                        'file_size_mb': round(vace_file_size, 1),
-                        'model_type': "VACE (Image-Only)",
-                        'description': "Image-only generation using VACE pipeline"
-                    })
+                    generated_videos.append(GeneratedVideo(
+                        filename=vace_output_filename,
+                        file_size_mb=round(vace_file_size, 1),
+                        model_type="VACE (Image-Only)",
+                        description="Image-only generation using VACE pipeline"
+                    ))
                     
                     logger.info(f"VACE video generated successfully: {vace_result_path}")
                     logger.info(f"File size: {vace_file_size:.1f} MB")
@@ -244,51 +292,83 @@ def generate_video():
             # Clear GPU memory after VACE generation
             clear_gpu_memory()
         
-        return jsonify({
-            'success': True,
-            'message': f'Generated {len(generated_videos)} video(s) successfully!',
-            'videos': generated_videos,
-            'resolution': resolution,
-            'width': width,
-            'height': height,
-            'model_id': model_id,
-            'video_guidance': video_path is not None
-        })
+        return VideoGenerationResponse(
+            success=True,
+            message=f'Generated {len(generated_videos)} video(s) successfully!',
+            videos=generated_videos,
+            resolution=resolution,
+            width=width,
+            height=height,
+            model_id=model_id,
+            video_guidance=video_path is not None
+        )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating video: {e}")
-        return jsonify({'error': f'Error generating video: {str(e)}'}), 500
+        raise HTTPException(status_code=500, detail=f"Error generating video: {str(e)}")
 
-@app.route('/download/<filename>')
-def download_video(filename):
+@app.get("/download/{filename}")
+async def download_video(filename: str):
     """Download generated video file."""
     try:
-        return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
+        file_path = os.path.join(OUTPUT_FOLDER, filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type='video/mp4'
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error downloading file {filename}: {e}")
-        return jsonify({'error': 'File not found'}), 404
+        raise HTTPException(status_code=404, detail="File not found")
 
-@app.route('/video/<filename>')
-def serve_video(filename):
+@app.get("/video/{filename}")
+async def serve_video(filename: str):
     """Serve video file for preview (without download)."""
     try:
-        return send_from_directory(app.config['OUTPUT_FOLDER'], filename, mimetype='video/mp4')
+        file_path = os.path.join(OUTPUT_FOLDER, filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            path=file_path,
+            media_type='video/mp4'
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error serving video file {filename}: {e}")
-        return jsonify({'error': 'File not found'}), 404
+        raise HTTPException(status_code=404, detail="File not found")
 
-@app.route('/health')
-def health_check():
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
     """Health check endpoint."""
-    return jsonify({'status': 'healthy', 'message': 'Wan2.1 Web API is running'})
+    return HealthResponse(
+        status="healthy",
+        message="Wan2.1 Web API is running"
+    )
 
-if __name__ == '__main__':
-    # Setup directories
+@app.on_event("startup")
+async def startup_event():
+    """Setup on application startup."""
     setup_app_directories()
     setup_directories()  # Setup Wan2.1 directories
-    
     logger.info("Starting Wan2.1 Web Application...")
     logger.info("Access the web interface at: http://localhost:8080")
-    
-    # Run the Flask app
-    app.run(host='0.0.0.0', port=8080, debug=False) 
+    logger.info("Access the API documentation at: http://localhost:8080/docs")
+
+if __name__ == '__main__':
+    # Run the FastAPI app with uvicorn
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8080,
+        reload=False,
+        log_level="info"
+    ) 
