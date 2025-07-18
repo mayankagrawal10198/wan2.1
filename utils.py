@@ -128,24 +128,24 @@ def calculate_pipeline_dimensions(image: Image.Image, pipeline, max_area: int = 
         return calculate_optimal_dimensions(image, max_area)
 
 
-def aspect_ratio_resize(image: Image.Image, pipeline, max_area: int = 720 * 1280) -> Tuple[Image.Image, int, int]:
-    """
-    Resize image according to aspect ratio formula with pipeline-specific parameters.
+# def aspect_ratio_resize(image: Image.Image, pipeline, max_area: int = 720 * 1280) -> Tuple[Image.Image, int, int]:
+#     """
+#     Resize image according to aspect ratio formula with pipeline-specific parameters.
     
-    Args:
-        image: Input PIL Image
-        pipeline: Loaded pipeline object
-        max_area: Maximum area constraint
+#     Args:
+#         image: Input PIL Image
+#         pipeline: Loaded pipeline object
+#         max_area: Maximum area constraint
     
-    Returns:
-        Tuple of (resized_image, height, width)
-    """
-    aspect_ratio = image.height / image.width
-    mod_value = pipeline.vae_scale_factor_spatial * pipeline.transformer.config.patch_size[1]
-    height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
-    width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
-    image = image.resize((width, height))
-    return image, height, width
+#     Returns:
+#         Tuple of (resized_image, height, width)
+#     """
+#     aspect_ratio = image.height / image.width
+#     mod_value = pipeline.vae_scale_factor_spatial * pipeline.transformer.config.patch_size[1]
+#     height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
+#     width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
+#     image = image.resize((width, height))
+#     return image, height, width
 
 
 def get_torch_dtype(dtype_str: str) -> torch.dtype:
