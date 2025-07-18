@@ -824,11 +824,11 @@ class WanVACEPipelineWrapper:
         
         # Memory-aware parameter adjustment for VACE
         # VACE is more memory-intensive, so reduce parameters if needed
-        original_num_frames = num_frames
-        if height >= 720 or width >= 720:
-            # For high resolution, reduce frames to save memory
-            num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
-            logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
+        # original_num_frames = num_frames
+        # if height >= 720 or width >= 720:
+        #     # For high resolution, reduce frames to save memory
+        #     num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
+        #     logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
         
         # Generate output path
         if output_path is None:
@@ -844,6 +844,16 @@ class WanVACEPipelineWrapper:
             self.pipe.scheduler.config, 
             flow_shift=flow_shift
         )
+        
+        # Check memory before generation and adjust if needed
+        gpu_info = check_gpu_memory()
+        if gpu_info and gpu_info['free_memory'] < 5.0:  # Less than 5GB free
+            logger.warning(f"Low GPU memory available: {gpu_info['free_memory']:.1f} GB")
+            # Further reduce frames if memory is still low
+            if num_frames > 41:
+                original_frames = num_frames
+                num_frames = 41
+                logger.info(f"Further reduced frames to {num_frames} due to low memory")
         
         # Generate video
         logger.info("Starting VACE video generation...")

@@ -21,7 +21,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories, clear_gpu_memory, check_gpu_memory
+from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory, clear_unallocated_memory
 from config import ENABLE_VACE
 
 # Setup logging
@@ -207,6 +207,12 @@ async def generate_video(
             import time
             time.sleep(2)
             
+            # Force free unallocated memory more aggressively after delay
+            force_free_unallocated_memory()
+            
+            # Specifically target unallocated memory
+            clear_unallocated_memory()
+            
             if ENABLE_VACE:
                 try:
                     vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
@@ -270,4 +276,8 @@ async def health_check():
     )
 
 if __name__ == '__main__':
+    # Set PyTorch CUDA allocation configuration to reduce memory fragmentation
+    import os
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:128'
+    
     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=False, log_level="info")

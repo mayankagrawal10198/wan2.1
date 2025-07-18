@@ -25,6 +25,8 @@ python download_models.py
 ### 3. Run the Web Application
 ```bash
 python app.py
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python app.py
 ```
 
 Access the web interface at: http://localhost:8080
