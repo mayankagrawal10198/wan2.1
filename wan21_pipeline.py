@@ -31,7 +31,7 @@ from utils import (
     setup_directories, validate_image_path, load_and_preprocess_image,
     calculate_optimal_dimensions, get_torch_dtype, check_gpu_memory,
     clear_gpu_memory, format_time, get_output_filename, validate_model_parameters,
-    log_system_info
+    log_system_info, calculate_pipeline_dimensions
 )
 
 # Setup logging
@@ -258,7 +258,7 @@ class Wan21Pipeline:
         output_path: Optional[str] = None,
         fps: int = DEFAULT_FPS,
         seed: Optional[int] = None
-    ) -> str:
+    ) -> tuple:
         """
         Generate video from input image
         
@@ -276,7 +276,7 @@ class Wan21Pipeline:
             seed: Random seed for reproducibility
         
         Returns:
-            Path to generated video
+            Tuple: (Path to generated video, width, height)
         """
         # Validate inputs
         if not validate_image_path(image_path):
@@ -307,9 +307,9 @@ class Wan21Pipeline:
         if image is None:
             raise ValueError(f"Failed to load image: {image_path}")
         
-        # Calculate dimensions
+        # Calculate dimensions using pipeline-specific parameters
         if height is None or width is None:
-            height, width = calculate_optimal_dimensions(image)
+            height, width = calculate_pipeline_dimensions(image, self.pipe)
             logger.info(f"Calculated dimensions: {width}x{height}")
         
         # Resize image to target dimensions
@@ -345,7 +345,7 @@ class Wan21Pipeline:
             logger.info(f"Video generation completed in {format_time(generation_time)}")
             logger.info(f"Output saved to: {output_path}")
             
-            return output_path
+            return output_path, width, height
             
         except Exception as e:
             logger.error(f"Error during video generation: {e}")
@@ -753,7 +753,7 @@ class WanVACEPipelineWrapper:
         fps: int = DEFAULT_FPS,
         seed: Optional[int] = None,
         conditioning_scale: float = 1.0
-    ) -> str:
+    ) -> tuple:
         """
         Generate video from input image with optional video guidance
         
@@ -773,7 +773,7 @@ class WanVACEPipelineWrapper:
             conditioning_scale: Conditioning scale for VACE
         
         Returns:
-            Path to generated video
+            Tuple: (Path to generated video, width, height)
         """
 
         
@@ -817,9 +817,9 @@ class WanVACEPipelineWrapper:
         if image is None:
             raise ValueError(f"Failed to load image: {image_path}")
         
-        # Calculate dimensions
+        # Calculate dimensions using pipeline-specific parameters
         if height is None or width is None:
-            height, width = calculate_optimal_dimensions(image)
+            height, width = calculate_pipeline_dimensions(image, self.pipe)
             logger.info(f"Calculated dimensions: {width}x{height}")
         
         # Memory-aware parameter adjustment for VACE
@@ -916,7 +916,7 @@ class WanVACEPipelineWrapper:
             logger.info(f"VACE video generation completed in {format_time(generation_time)}")
             logger.info(f"Output saved to: {output_path}")
             
-            return output_path
+            return output_path, width, height
             
         except Exception as e:
             logger.error(f"Error during VACE video generation: {e}")
