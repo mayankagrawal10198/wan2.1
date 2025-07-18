@@ -824,11 +824,11 @@ class WanVACEPipelineWrapper:
         
         # Memory-aware parameter adjustment for VACE
         # VACE is more memory-intensive, so reduce parameters if needed
-        original_num_frames = num_frames
-        if height >= 720 or width >= 720:
-            # For high resolution, reduce frames to save memory
-            num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
-            logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
+        # original_num_frames = num_frames
+        # if height >= 720 or width >= 720:
+        #     # For high resolution, reduce frames to save memory
+        #     num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
+        #     logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
         
         # Generate output path
         if output_path is None:
