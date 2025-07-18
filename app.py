@@ -202,7 +202,11 @@ async def generate_video(
                 description="Standard image-to-video generation"
             ))
             clear_gpu_memory()
-
+            
+            # Small delay to ensure CUDA cache is fully cleared
+            import time
+            time.sleep(2)
+            
             if ENABLE_VACE:
                 try:
                     vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
