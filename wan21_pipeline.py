@@ -24,7 +24,8 @@ from config import (
     DEFAULT_FPS, DEFAULT_MODEL_ID, DEFAULT_TORCH_DTYPE, DEFAULT_DEVICE,
     DEFAULT_NUM_FRAMES, DEFAULT_GUIDANCE_SCALE, DEFAULT_NUM_INFERENCE_STEPS,
     DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT, LORA_GUIDANCE_SCALE, LORA_NUM_INFERENCE_STEPS,
-    ENABLE_LORA, CAUSVID_LORA_PATH, CAUSVID_LORA_FILENAME, CAUSVID_ADAPTER_NAME, CAUSVID_STRENGTH
+    ENABLE_LORA, CAUSVID_LORA_PATH, CAUSVID_LORA_FILENAME, CAUSVID_ADAPTER_NAME, CAUSVID_STRENGTH,
+    ENABLE_VACE
 )
 from utils import (
     setup_directories, validate_image_path, load_and_preprocess_image,
@@ -587,6 +588,8 @@ class WanVACEPipelineWrapper:
         #     self.pipe.enable_sequential_cpu_offload()
         #     self.enable_sequential_cpu_offload = True
         
+
+        
         logger.info("VACE memory optimizations applied successfully")
     
     def extract_video_frames(self, video_path: str, num_frames: int = 81) -> List[Image.Image]:
@@ -772,6 +775,8 @@ class WanVACEPipelineWrapper:
         Returns:
             Path to generated video
         """
+
+        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
@@ -843,17 +848,6 @@ class WanVACEPipelineWrapper:
         # Generate video
         logger.info("Starting VACE video generation...")
         
-        # Check available memory before generation
-        gpu_info = check_gpu_memory()
-        if gpu_info and gpu_info['free_memory'] < 5.0:  # Less than 5GB free
-            logger.warning(f"Low GPU memory available: {gpu_info['free_memory']:.1f} GB")
-            logger.warning("Applying additional memory optimizations...")
-            # Force garbage collection
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
-        
         start_time = time.time()
         
         try:
@@ -902,6 +896,7 @@ class WanVACEPipelineWrapper:
                         num_inference_steps=num_inference_steps,
                         generator=torch.Generator().manual_seed(seed) if seed else None
                     ).frames[0]  # frames[0] gets the first (and only) video from output
+
             
             # Export video
             logger.info(f"Exporting VACE video to: {output_path}")

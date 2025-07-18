@@ -38,6 +38,9 @@ ENABLE_VAE_SLICING = True
 ENABLE_MODEL_CPU_OFFLOAD = True
 ENABLE_SEQUENTIAL_CPU_OFFLOAD = False
 
+# VACE Pipeline Settings
+ENABLE_VACE = True  # Enable/disable VACE pipeline
+
 # File Paths
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"

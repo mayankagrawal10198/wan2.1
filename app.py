@@ -21,7 +21,8 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories, clear_gpu_memory
+from utils import setup_directories, clear_gpu_memory, check_gpu_memory
+from config import ENABLE_VACE
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -154,6 +155,8 @@ async def generate_video(
         generated_videos = []
 
         if video_path:
+
+            
             logger.info("Using VACE pipeline (guided)")
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
             vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
@@ -200,15 +203,7 @@ async def generate_video(
             ))
             clear_gpu_memory()
 
-            import time
-            time.sleep(2)
-            clear_gpu_memory()
-
-            from utils import check_gpu_memory
-            mem_info = check_gpu_memory()
-            vace_skip = mem_info and mem_info['free_memory'] < 3.0
-
-            if not vace_skip:
+            if ENABLE_VACE:
                 try:
                     vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
                     vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
@@ -231,7 +226,6 @@ async def generate_video(
                     ))
                 except Exception as e:
                     logger.error(f"VACE generation failed: {e}")
-            clear_gpu_memory()
 
         return VideoGenerationResponse(
             success=True,
