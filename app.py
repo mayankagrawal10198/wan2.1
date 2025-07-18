@@ -21,7 +21,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories, clear_gpu_memory, check_gpu_memory
+from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory
 from config import ENABLE_VACE
 
 # Setup logging
@@ -203,6 +203,9 @@ async def generate_video(
             ))
             clear_gpu_memory()
             
+            # Force free unallocated memory more aggressively
+            force_free_unallocated_memory()
+            
             # Small delay to ensure CUDA cache is fully cleared
             import time
             time.sleep(2)
@@ -272,6 +275,6 @@ async def health_check():
 if __name__ == '__main__':
     # Set PyTorch CUDA allocation configuration to reduce memory fragmentation
     import os
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:128'
     
     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=False, log_level="info")

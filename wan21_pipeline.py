@@ -845,6 +845,16 @@ class WanVACEPipelineWrapper:
             flow_shift=flow_shift
         )
         
+        # Check memory before generation and adjust if needed
+        gpu_info = check_gpu_memory()
+        if gpu_info and gpu_info['free_memory'] < 5.0:  # Less than 5GB free
+            logger.warning(f"Low GPU memory available: {gpu_info['free_memory']:.1f} GB")
+            # Further reduce frames if memory is still low
+            if num_frames > 41:
+                original_frames = num_frames
+                num_frames = 41
+                logger.info(f"Further reduced frames to {num_frames} due to low memory")
+        
         # Generate video
         logger.info("Starting VACE video generation...")
         

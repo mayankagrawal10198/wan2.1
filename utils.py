@@ -148,6 +148,9 @@ def clear_gpu_memory():
         # Force synchronization to ensure memory is freed
         torch.cuda.synchronize()
         
+        # Reset peak memory stats to free reserved memory
+        torch.cuda.reset_peak_memory_stats()
+        
         # Force garbage collection
         import gc
         gc.collect()
@@ -158,6 +161,43 @@ def clear_gpu_memory():
         import gc
         gc.collect()
         logger.info("System memory cleared (no CUDA available)")
+
+
+def force_free_unallocated_memory():
+    """Force free unallocated PyTorch memory more aggressively."""
+    if torch.cuda.is_available():
+        # Get current memory stats
+        allocated_before = torch.cuda.memory_allocated()
+        reserved_before = torch.cuda.memory_reserved()
+        
+        # Clear all caches
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+        torch.cuda.synchronize()
+        
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        # Force garbage collection multiple times
+        import gc
+        for _ in range(3):
+            gc.collect()
+        
+        # Get memory stats after clearing
+        allocated_after = torch.cuda.memory_allocated()
+        reserved_after = torch.cuda.memory_reserved()
+        
+        freed_allocated = allocated_before - allocated_after
+        freed_reserved = reserved_before - reserved_after
+        
+        logger.info(f"Freed {freed_allocated/1024**3:.2f} GB allocated memory")
+        logger.info(f"Freed {freed_reserved/1024**3:.2f} GB reserved memory")
+        
+        return freed_allocated, freed_reserved
+    else:
+        import gc
+        gc.collect()
+        return 0, 0
 
 
 def format_time(seconds: float) -> str:
