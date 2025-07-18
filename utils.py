@@ -100,6 +100,54 @@ def calculate_optimal_dimensions(image: Image.Image, max_area: int = 480 * 832,
     return height, width
 
 
+def calculate_pipeline_dimensions(image: Image.Image, pipeline, max_area: int = 480 * 832) -> Tuple[int, int]:
+    """
+    Calculate optimal dimensions for a specific pipeline using its actual VAE scale factor and patch size.
+    
+    Args:
+        image: Input PIL Image
+        pipeline: Loaded pipeline object
+        max_area: Maximum area constraint
+    
+    Returns:
+        Tuple of (height, width)
+    """
+    try:
+        # Get VAE scale factor from pipeline
+        vae_scale_factor = pipeline.vae_scale_factor_spatial if hasattr(pipeline, 'vae_scale_factor_spatial') else 8
+        
+        # Get patch size from transformer config
+        patch_size = pipeline.transformer.config.patch_size[1] if hasattr(pipeline, 'transformer') and hasattr(pipeline.transformer, 'config') else 16
+        
+        logger.info(f"Pipeline VAE scale factor: {vae_scale_factor}, patch size: {patch_size}")
+        
+        return calculate_optimal_dimensions(image, max_area, vae_scale_factor, patch_size)
+        
+    except Exception as e:
+        logger.warning(f"Could not get pipeline parameters, using defaults: {e}")
+        return calculate_optimal_dimensions(image, max_area)
+
+
+# def aspect_ratio_resize(image: Image.Image, pipeline, max_area: int = 720 * 1280) -> Tuple[Image.Image, int, int]:
+#     """
+#     Resize image according to aspect ratio formula with pipeline-specific parameters.
+    
+#     Args:
+#         image: Input PIL Image
+#         pipeline: Loaded pipeline object
+#         max_area: Maximum area constraint
+    
+#     Returns:
+#         Tuple of (resized_image, height, width)
+#     """
+#     aspect_ratio = image.height / image.width
+#     mod_value = pipeline.vae_scale_factor_spatial * pipeline.transformer.config.patch_size[1]
+#     height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
+#     width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
+#     image = image.resize((width, height))
+#     return image, height, width
+
+
 def get_torch_dtype(dtype_str: str) -> torch.dtype:
     """Convert string dtype to torch dtype."""
     dtype_map = {

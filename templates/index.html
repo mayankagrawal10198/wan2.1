@@ -149,6 +149,26 @@
             font-weight: 500;
         }
 
+        .image-preview {
+            margin-top: 15px;
+            text-align: center;
+            display: none;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border: 2px solid #e1e5e9;
+        }
+
+        .image-preview-info {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
         .form-control {
             width: 100%;
             padding: 12px 15px;
@@ -411,6 +431,10 @@
                         <input type="file" id="imageFile" name="image" accept=".png,.jpg,.jpeg,.bmp,.tiff,.webp">
                     </div>
                     <div class="selected-file" id="selectedFile" style="display: none;"></div>
+                    <div class="image-preview" id="imagePreview">
+                        <img id="previewImage" src="" alt="Image preview">
+                        <div class="image-preview-info" id="imagePreviewInfo"></div>
+                    </div>
                 </div>
 
                 <!-- Video Upload (Optional) -->
@@ -486,6 +510,11 @@
             document.getElementById('selectedFile').style.display = 'none';
             document.getElementById('selectedVideoFile').style.display = 'none';
             
+            // Clear image preview
+            document.getElementById('imagePreview').style.display = 'none';
+            document.getElementById('previewImage').src = '';
+            document.getElementById('imagePreviewInfo').textContent = '';
+            
             // Reset prompts to defaults
             document.getElementById('positivePrompt').value = 'A beautiful scene with gentle movement and cinematic quality';
             document.getElementById('negativePrompt').value = 'static, blurred, low quality, distorted, ugly, watermark';
@@ -556,6 +585,29 @@
             selectedFile.style.background = '#e8f5e8';
             selectedFile.style.color = '#2d5a2d';
             selectedFile.style.border = '1px solid #c3e6cb';
+            
+            // Show image preview
+            const imagePreview = document.getElementById('imagePreview');
+            const previewImage = document.getElementById('previewImage');
+            const imagePreviewInfo = document.getElementById('imagePreviewInfo');
+            
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    
+                    // Get image dimensions
+                    const img = new Image();
+                    img.onload = function() {
+                        imagePreviewInfo.textContent = `Dimensions: ${this.width} × ${this.height} pixels`;
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imagePreview.style.display = 'none';
+            }
         }
 
         // Video file upload handling

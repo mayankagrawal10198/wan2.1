@@ -21,24 +21,25 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory, clear_unallocated_memory
+from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory, clear_unallocated_memory, calculate_optimal_dimensions
+from PIL import Image
 from config import ENABLE_VACE
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Resolution presets with model IDs
+# Resolution presets with model IDs and max areas for aspect ratio calculation
 RESOLUTION_PRESETS = {
     '480p': {
-        'width': 320,
-        'height': 400,
-        'model_id': 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers'
+        'max_area': 480 * 832,  # 399,360 pixels
+        'model_id': 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        'vace_max_area': 480 * 832  # Same for VACE at 480p
     },
     '720p': {
-        'width': 576,
-        'height': 720,
-        'model_id': 'Wan-AI/Wan2.1-I2V-14B-720P-Diffusers'
+        'max_area': 720 * 1280,  # 921,600 pixels  
+        'model_id': 'Wan-AI/Wan2.1-I2V-14B-720P-Diffusers',
+        'vace_max_area': 720 * 1280  # Same for VACE at 720p
     }
 }
 
@@ -60,14 +61,14 @@ class GeneratedVideo(BaseModel):
     file_size_mb: float
     model_type: str
     description: str
+    width: int
+    height: int
 
 class VideoGenerationResponse(BaseModel):
     success: bool
     message: str
     videos: List[GeneratedVideo]
     resolution: str
-    width: int
-    height: int
     model_id: str
     video_guidance: bool
 
@@ -144,31 +145,31 @@ async def generate_video(
         if resolution not in RESOLUTION_PRESETS:
             raise HTTPException(status_code=400, detail="Invalid resolution. Choose 480p or 720p")
 
-        width = RESOLUTION_PRESETS[resolution]['width']
-        height = RESOLUTION_PRESETS[resolution]['height']
         model_id = RESOLUTION_PRESETS[resolution]['model_id']
         upload_path = save_upload_file(image, UPLOAD_FOLDER)
+        
+        # Get max areas for aspect ratio calculation
+        i2v_max_area = RESOLUTION_PRESETS[resolution]['max_area']
+        vace_max_area = RESOLUTION_PRESETS[resolution]['vace_max_area']
+        logger.info(f"I2V max area: {i2v_max_area}, VACE max area: {vace_max_area}")
 
         logger.info(f"Processing image: {upload_path}")
         logger.info(f"Video guidance: {'Yes' if video_path else 'No'}")
 
         generated_videos = []
-
+        i2v_width = i2v_height = vace_width = vace_height = 0
         if video_path:
-
-            
             logger.info("Using VACE pipeline (guided)")
             vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
             vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
-
             with WanVACEPipelineWrapper() as pipeline:
-                result_path = pipeline.generate_video_with_guidance(
+                result_path, vace_width, vace_height = pipeline.generate_video_with_guidance(
                     image_path=upload_path,
                     video_path=video_path,
                     prompt=positive_prompt,
                     negative_prompt=negative_prompt,
-                    width=width,
-                    height=height,
+                    width=None,
+                    height=None,
                     output_path=vace_output_path
                 )
             size = os.path.getsize(result_path) / (1024 * 1024)
@@ -176,22 +177,22 @@ async def generate_video(
                 filename=vace_output_filename,
                 file_size_mb=round(size, 1),
                 model_type="VACE (Video-Guided)",
-                description="Video-guided generation using VACE pipeline"
+                description="Video-guided generation using VACE pipeline",
+                width=vace_width,
+                height=vace_height
             ))
             clear_gpu_memory()
-
         else:
             logger.info("Generating I2V and optionally VACE")
             i2v_output_filename = f"generated_i2v_{uuid.uuid4()}.mp4"
             i2v_output_path = os.path.join(OUTPUT_FOLDER, i2v_output_filename)
-
             with Wan21Pipeline(model_id=model_id) as pipeline:
-                i2v_result_path = pipeline.generate_video(
+                i2v_result_path, i2v_width, i2v_height = pipeline.generate_video(
                     image_path=upload_path,
                     prompt=positive_prompt,
                     negative_prompt=negative_prompt,
-                    width=width,
-                    height=height,
+                    width=None,
+                    height=None,
                     output_path=i2v_output_path
                 )
             i2v_size = os.path.getsize(i2v_result_path) / (1024 * 1024)
@@ -199,32 +200,27 @@ async def generate_video(
                 filename=i2v_output_filename,
                 file_size_mb=round(i2v_size, 1),
                 model_type="I2V (Image-to-Video)",
-                description="Standard image-to-video generation"
+                description="Standard image-to-video generation",
+                width=i2v_width,
+                height=i2v_height
             ))
             clear_gpu_memory()
-            
-            # Small delay to ensure CUDA cache is fully cleared
             import time
             time.sleep(2)
-            
-            # Force free unallocated memory more aggressively after delay
             force_free_unallocated_memory()
-            
-            # Specifically target unallocated memory
             clear_unallocated_memory()
-            
             if ENABLE_VACE:
                 try:
                     vace_output_filename = f"generated_vace_{uuid.uuid4()}.mp4"
                     vace_output_path = os.path.join(OUTPUT_FOLDER, vace_output_filename)
                     with WanVACEPipelineWrapper() as pipeline:
-                        vace_result_path = pipeline.generate_video_with_guidance(
+                        vace_result_path, vace_width, vace_height = pipeline.generate_video_with_guidance(
                             image_path=upload_path,
                             video_path=None,
                             prompt=positive_prompt,
                             negative_prompt=negative_prompt,
-                            width=width,
-                            height=height,
+                            width=None,
+                            height=None,
                             output_path=vace_output_path
                         )
                     vace_size = os.path.getsize(vace_result_path) / (1024 * 1024)
@@ -232,18 +228,20 @@ async def generate_video(
                         filename=vace_output_filename,
                         file_size_mb=round(vace_size, 1),
                         model_type="VACE (Image-Only)",
-                        description="Image-only generation using VACE pipeline"
+                        description="Image-only generation using VACE pipeline",
+                        width=vace_width,
+                        height=vace_height
                     ))
                 except Exception as e:
                     logger.error(f"VACE generation failed: {e}")
-
+        # Use the first generated video's dimensions for backward compatibility
+        main_width = generated_videos[0].width if generated_videos else 0
+        main_height = generated_videos[0].height if generated_videos else 0
         return VideoGenerationResponse(
             success=True,
             message=f'Generated {len(generated_videos)} video(s) successfully!',
             videos=generated_videos,
             resolution=resolution,
-            width=width,
-            height=height,
             model_id=model_id,
             video_guidance=video_path is not None
         )
