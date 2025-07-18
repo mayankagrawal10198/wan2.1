@@ -137,10 +137,24 @@ def check_gpu_memory():
 
 
 def clear_gpu_memory():
-    """Clear GPU memory cache."""
+    """Clear GPU memory cache comprehensively."""
     if torch.cuda.is_available():
+        # Clear PyTorch CUDA cache
         torch.cuda.empty_cache()
-        logger.info("GPU memory cache cleared")
+        
+        # Collect IPC memory
+        torch.cuda.ipc_collect()
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        logger.info("GPU memory cache cleared comprehensively")
+    else:
+        # Still run garbage collection even without CUDA
+        import gc
+        gc.collect()
+        logger.info("System memory cleared (no CUDA available)")
 
 
 def format_time(seconds: float) -> str:

@@ -14,7 +14,7 @@ import imageio
 from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
 from PIL import Image
-
+import peft
 from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanVACEPipeline as DiffusersWanVACEPipeline
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 from diffusers.utils import export_to_video, load_image
@@ -23,7 +23,9 @@ from transformers import CLIPVisionModel
 from config import (
     DEFAULT_FPS, DEFAULT_MODEL_ID, DEFAULT_TORCH_DTYPE, DEFAULT_DEVICE,
     DEFAULT_NUM_FRAMES, DEFAULT_GUIDANCE_SCALE, DEFAULT_NUM_INFERENCE_STEPS,
-    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT
+    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT, LORA_GUIDANCE_SCALE, LORA_NUM_INFERENCE_STEPS,
+    ENABLE_LORA, CAUSVID_LORA_PATH, CAUSVID_LORA_FILENAME, CAUSVID_ADAPTER_NAME, CAUSVID_STRENGTH,
+    ENABLE_VACE
 )
 from utils import (
     setup_directories, validate_image_path, load_and_preprocess_image,
@@ -54,7 +56,13 @@ class Wan21Pipeline:
         enable_sequential_cpu_offload: bool = False,
         cache_dir: Optional[str] = None,
         local_files_only: bool = False,
-        revision: str = "main"
+        revision: str = "main",
+        # LoRA configuration parameters
+        enable_lora: bool = ENABLE_LORA,
+        lora_path: str = CAUSVID_LORA_PATH,
+        lora_filename: str = CAUSVID_LORA_FILENAME,
+        lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
+        lora_strength: float = CAUSVID_STRENGTH
     ):
         """
         Initialize Wan2.1 I2V Pipeline
@@ -71,6 +79,11 @@ class Wan21Pipeline:
             cache_dir: Cache directory for model downloads
             local_files_only: Use only local files
             revision: Model revision
+            enable_lora: Enable LoRA loading
+            lora_path: LoRA model path or ID
+            lora_filename: LoRA filename (for subfolder access)
+            lora_adapter_name: LoRA adapter name
+            lora_strength: LoRA strength/weight (0.25-1.0)
         """
         self.model_id = model_id
         self.torch_dtype = get_torch_dtype(torch_dtype)
@@ -84,6 +97,14 @@ class Wan21Pipeline:
         self.local_files_only = local_files_only
         self.revision = revision
         
+        # LoRA configuration
+        self.enable_lora = enable_lora
+        self.lora_path = lora_path
+        self.lora_filename = lora_filename
+        self.lora_adapter_name = lora_adapter_name
+        self.lora_strength = lora_strength
+        self.lora_loaded_successfully = False  # Track if LoRA was successfully loaded
+        
         # Initialize components
         self.pipe = None
         self.image_encoder = None
@@ -96,6 +117,8 @@ class Wan21Pipeline:
         log_system_info()
         
         logger.info("Wan21Pipeline initialized successfully")
+        if self.enable_lora:
+            logger.info(f"LoRA enabled: {self.lora_path}/{self.lora_filename} (strength: {self.lora_strength})")
     
     def _get_local_model_path(self) -> str:
         """Get local model path based on model_id."""
@@ -134,7 +157,7 @@ class Wan21Pipeline:
                 local_model_path,
                 subfolder="image_encoder",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -144,7 +167,7 @@ class Wan21Pipeline:
                 local_model_path,
                 subfolder="vae",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -155,9 +178,29 @@ class Wan21Pipeline:
                 vae=self.vae,
                 image_encoder=self.image_encoder,
                 torch_dtype=self.torch_dtype,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
+            
+            # Load CausVid LoRA (if enabled)
+            if self.enable_lora:
+                logger.info(f"Loading CausVid LoRA: {self.lora_path}/{self.lora_filename}")
+                try:
+                    # Load LoRA weights following the reference pattern
+                    self.pipe.load_lora_weights(
+                        self.lora_path, 
+                        weight_name=self.lora_filename,
+                        adapter_name=self.lora_adapter_name
+                    )
+                    # Set adapter with strength as a float (not in a list)
+                    self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
+                    logger.info(f"LoRA loaded successfully with strength: {self.lora_strength}")
+                    self.lora_loaded_successfully = True
+                except Exception as e:
+                    logger.warning(f"Failed to load LoRA: {e}")
+                    logger.warning("Continuing without LoRA...")
+                    self.enable_lora = False
+                    self.lora_loaded_successfully = False
             
             # Apply optimizations
             if self.enable_optimizations:
@@ -224,8 +267,8 @@ class Wan21Pipeline:
             prompt: Text prompt for video generation
             negative_prompt: Negative text prompt
             num_frames: Number of frames to generate
-            guidance_scale: Guidance scale for generation
-            num_inference_steps: Number of inference steps
+            guidance_scale: Guidance scale for generation (overridden to LORA_GUIDANCE_SCALE when LoRA is enabled)
+            num_inference_steps: Number of inference steps (overridden to LORA_NUM_INFERENCE_STEPS when LoRA is enabled)
             height: Output height (auto-calculated if None)
             width: Output width (auto-calculated if None)
             output_path: Output video path (auto-generated if None)
@@ -245,6 +288,13 @@ class Wan21Pipeline:
         # Load model if not loaded
         if self.pipe is None:
             self.load_model()
+        
+        # Apply LoRA optimized defaults only when LoRA was successfully loaded
+        if self.enable_lora and self.lora_loaded_successfully:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Set random seed
         if seed is not None:
@@ -300,18 +350,12 @@ class Wan21Pipeline:
         except Exception as e:
             logger.error(f"Error during video generation: {e}")
             raise
-        finally:
-            # Clear GPU memory
-            clear_gpu_memory()
     
 
     
     def cleanup(self):
         """Clean up resources and free memory."""
         logger.info("Cleaning up resources...")
-        
-        # Clear GPU memory
-        clear_gpu_memory()
         
         # Delete pipeline components
         if self.pipe is not None:
@@ -341,7 +385,7 @@ class Wan21Pipeline:
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information."""
-        return {
+        info = {
             "model_id": self.model_id,
             "torch_dtype": str(self.torch_dtype),
             "device": self.device,
@@ -349,8 +393,19 @@ class Wan21Pipeline:
             "enable_attention_slicing": self.enable_attention_slicing,
             "enable_vae_slicing": self.enable_vae_slicing,
             "enable_model_cpu_offload": self.enable_model_cpu_offload,
-            "enable_sequential_cpu_offload": self.enable_sequential_cpu_offload
+            "enable_sequential_cpu_offload": self.enable_sequential_cpu_offload,
+            "enable_lora": self.enable_lora
         }
+        
+        if self.enable_lora:
+            info.update({
+                "lora_path": self.lora_path,
+                "lora_filename": self.lora_filename,
+                "lora_adapter_name": self.lora_adapter_name,
+                "lora_strength": self.lora_strength
+            })
+        
+        return info
 
 
 class WanVACEPipelineWrapper:
@@ -366,7 +421,13 @@ class WanVACEPipelineWrapper:
         enable_optimizations: bool = True,
         cache_dir: Optional[str] = None,
         local_files_only: bool = False,
-        revision: str = "main"
+        revision: str = "main",
+        # LoRA configuration parameters
+        enable_lora: bool = ENABLE_LORA,
+        lora_path: str = CAUSVID_LORA_PATH,
+        lora_filename: str = CAUSVID_LORA_FILENAME,
+        lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
+        lora_strength: float = CAUSVID_STRENGTH
     ):
         """
         Initialize Wan2.1 VACE Pipeline
@@ -379,6 +440,11 @@ class WanVACEPipelineWrapper:
             cache_dir: Cache directory for model downloads
             local_files_only: Use only local files
             revision: Model revision
+            enable_lora: Enable LoRA loading
+            lora_path: LoRA model path or ID
+            lora_filename: LoRA filename (for subfolder access)
+            lora_adapter_name: LoRA adapter name
+            lora_strength: LoRA strength/weight (0.25-1.0)
         """
         self.model_id = model_id
         self.torch_dtype = get_torch_dtype(torch_dtype)
@@ -387,6 +453,15 @@ class WanVACEPipelineWrapper:
         self.cache_dir = cache_dir
         self.local_files_only = local_files_only
         self.revision = revision
+        self.enable_sequential_cpu_offload = False  # Will be set during optimization
+        
+        # LoRA configuration
+        self.enable_lora = enable_lora
+        self.lora_path = lora_path
+        self.lora_filename = lora_filename
+        self.lora_adapter_name = lora_adapter_name
+        self.lora_strength = lora_strength
+        self.lora_loaded_successfully = False  # Track if LoRA was successfully loaded
         
         # Initialize components
         self.pipe = None
@@ -399,6 +474,8 @@ class WanVACEPipelineWrapper:
         log_system_info()
         
         logger.info("WanVACEPipelineWrapper initialized successfully")
+        if self.enable_lora:
+            logger.info(f"VACE LoRA enabled: {self.lora_path}/{self.lora_filename} (strength: {self.lora_strength})")
     
     def _get_local_model_path(self) -> str:
         """Get local model path for VACE model."""
@@ -429,7 +506,7 @@ class WanVACEPipelineWrapper:
                 local_model_path,
                 subfolder="vae",
                 torch_dtype=torch.float32,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
             
@@ -439,16 +516,42 @@ class WanVACEPipelineWrapper:
                 local_model_path,
                 vae=self.vae,
                 torch_dtype=self.torch_dtype,
-                local_files_only=True,
+                local_files_only=self.local_files_only,
                 low_cpu_mem_usage=True
             )
+            
+            # Load CausVid LoRA for VACE (if enabled)
+            if self.enable_lora:
+                logger.info(f"Loading CausVid LoRA for VACE: {self.lora_path}/{self.lora_filename}")
+                try:
+                    # Load LoRA weights following the reference pattern
+                    self.pipe.load_lora_weights(
+                        self.lora_path, 
+                        weight_name=self.lora_filename,
+                        adapter_name=self.lora_adapter_name
+                    )
+                    # Set adapter with strength as a float (not in a list)
+                    self.pipe.set_adapters(self.lora_adapter_name, self.lora_strength)
+                    logger.info(f"VACE LoRA loaded successfully with strength: {self.lora_strength}")
+                    self.lora_loaded_successfully = True
+                except Exception as e:
+                    logger.warning(f"Failed to load VACE LoRA: {e}")
+                    logger.warning("Continuing VACE without LoRA...")
+                    self.enable_lora = False
+                    self.lora_loaded_successfully = False
             
             # Apply optimizations
             if self.enable_optimizations:
                 self._apply_optimizations()
             
-            # Move to device
-            self.pipe.to(self.device)
+            # Move to device (only if not using CPU offloading)
+            if not hasattr(self.pipe, 'enable_model_cpu_offload') or not self.enable_optimizations:
+                self.pipe.to(self.device)
+                logger.info(f"VACE pipeline moved to {self.device}")
+            else:
+                # When using CPU offloading, keep pipeline on CPU
+                # Offloading will automatically move components to GPU when needed
+                logger.info("Keeping VACE pipeline on CPU (model CPU offloading enabled)")
             
             logger.info("VACE model loaded successfully!")
             
@@ -472,6 +575,20 @@ class WanVACEPipelineWrapper:
         if hasattr(self.pipe.vae, 'enable_slicing'):
             logger.info("Enabling VAE slicing...")
             self.pipe.vae.enable_slicing()
+        
+        # Enable model CPU offloading for VACE
+        if hasattr(self.pipe, 'enable_model_cpu_offload'):
+            logger.info("Enabling model CPU offload for VACE...")
+            self.pipe.enable_model_cpu_offload()
+        
+        # Enable sequential CPU offloading for VACE
+        # Disabled due to GPU compatibility issues
+        # if hasattr(self.pipe, 'enable_sequential_cpu_offload'):
+        #     logger.info("Enabling sequential CPU offload for VACE...")
+        #     self.pipe.enable_sequential_cpu_offload()
+        #     self.enable_sequential_cpu_offload = True
+        
+
         
         logger.info("VACE memory optimizations applied successfully")
     
@@ -624,7 +741,7 @@ class WanVACEPipelineWrapper:
     def generate_video_with_guidance(
         self,
         image_path: str,
-        video_path: str,
+        video_path: Optional[str] = None,
         prompt: str = DEFAULT_PROMPT,
         negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
         num_frames: int = DEFAULT_NUM_FRAMES,
@@ -638,16 +755,16 @@ class WanVACEPipelineWrapper:
         conditioning_scale: float = 1.0
     ) -> str:
         """
-        Generate video from input image with video guidance
+        Generate video from input image with optional video guidance
         
         Args:
             image_path: Path to input image
-            video_path: Path to guidance video
+            video_path: Path to guidance video (optional - if None, uses image-only generation)
             prompt: Text prompt for video generation
             negative_prompt: Negative text prompt
             num_frames: Number of frames to generate
-            guidance_scale: Guidance scale for generation
-            num_inference_steps: Number of inference steps
+            guidance_scale: Guidance scale for generation (overridden to LORA_GUIDANCE_SCALE when LoRA is enabled)
+            num_inference_steps: Number of inference steps (overridden to LORA_NUM_INFERENCE_STEPS when LoRA is enabled)
             height: Output height (auto-calculated if None)
             width: Output width (auto-calculated if None)
             output_path: Output video path (auto-generated if None)
@@ -658,23 +775,36 @@ class WanVACEPipelineWrapper:
         Returns:
             Path to generated video
         """
+
+        
         # Validate inputs
         if not validate_image_path(image_path):
             raise ValueError(f"Invalid image path: {image_path}")
         
-        if not os.path.exists(video_path):
-            raise ValueError(f"Video file not found: {video_path}")
-        
-        # Check file size
-        file_size = os.path.getsize(video_path)
-        if file_size == 0:
-            raise ValueError(f"Video file is empty: {video_path}")
-        
-        logger.info(f"Video file size: {file_size / (1024*1024):.1f} MB")
+        # Handle optional video path
+        if video_path is not None:
+            if not os.path.exists(video_path):
+                raise ValueError(f"Video file not found: {video_path}")
+            
+            # Check file size
+            file_size = os.path.getsize(video_path)
+            if file_size == 0:
+                raise ValueError(f"Video file is empty: {video_path}")
+            
+            logger.info(f"Video file size: {file_size / (1024*1024):.1f} MB")
+        else:
+            logger.info("No video guidance provided - using image-only generation")
         
         # Load model if not loaded
         if self.pipe is None:
             self.load_model()
+        
+        # Apply LoRA optimized defaults only when LoRA was successfully loaded
+        if self.enable_lora and self.lora_loaded_successfully:
+            # Override with LoRA-optimized settings from config
+            guidance_scale = LORA_GUIDANCE_SCALE  # CFG Scale for LoRA
+            num_inference_steps = LORA_NUM_INFERENCE_STEPS  # Inference Steps for LoRA
+            logger.info(f"VACE LoRA enabled - using optimized settings: guidance_scale={guidance_scale}, steps={num_inference_steps}")
         
         # Set random seed
         if seed is not None:
@@ -692,21 +822,13 @@ class WanVACEPipelineWrapper:
             height, width = calculate_optimal_dimensions(image)
             logger.info(f"Calculated dimensions: {width}x{height}")
         
-        # Extract frames from guidance video
-        logger.info(f"Extracting frames from guidance video: {video_path}")
-        try:
-            video_frames = self.extract_video_frames(video_path, num_frames)
-        except Exception as e:
-            logger.error(f"Failed to extract frames from video: {e}")
-            raise ValueError(f"Video processing failed. Please ensure the video file is valid and not corrupted. Error: {e}")
-        
-        if len(video_frames) < 2:
-            raise ValueError("Video must have at least 2 frames")
-        
-        # Prepare video and mask for VACE
-        first_frame = video_frames[0]
-        last_frame = video_frames[-1]
-        video, mask = self.prepare_video_and_mask(first_frame, last_frame, height, width, num_frames)
+        # Memory-aware parameter adjustment for VACE
+        # VACE is more memory-intensive, so reduce parameters if needed
+        original_num_frames = num_frames
+        if height >= 720 or width >= 720:
+            # For high resolution, reduce frames to save memory
+            num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
+            logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
         
         # Generate output path
         if output_path is None:
@@ -725,23 +847,56 @@ class WanVACEPipelineWrapper:
         
         # Generate video
         logger.info("Starting VACE video generation...")
+        
         start_time = time.time()
         
         try:
             with torch.no_grad():
-                output = self.pipe(
-                    video=video,
-                    mask=mask,
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    height=height,
-                    width=width,
-                    num_frames=num_frames,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    conditioning_scale=conditioning_scale,
-                    generator=torch.Generator().manual_seed(seed) if seed else None
-                ).frames[0]
+                if video_path is not None:
+                    # Extract frames from guidance video
+                    logger.info(f"Extracting frames from guidance video: {video_path}")
+                    try:
+                        video_frames = self.extract_video_frames(video_path, num_frames)
+                    except Exception as e:
+                        logger.error(f"Failed to extract frames from video: {e}")
+                        raise ValueError(f"Video processing failed. Please ensure the video file is valid and not corrupted. Error: {e}")
+                    
+                    if len(video_frames) < 2:
+                        raise ValueError("Video must have at least 2 frames")
+                    
+                    # Prepare video and mask for VACE
+                    first_frame = video_frames[0]
+                    last_frame = video_frames[-1]
+                    video, mask = self.prepare_video_and_mask(first_frame, last_frame, height, width, num_frames)
+                    
+                    output = self.pipe(
+                        video=video,
+                        mask=mask,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        height=height,
+                        width=width,
+                        num_frames=num_frames,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                        conditioning_scale=conditioning_scale,
+                        generator=torch.Generator().manual_seed(seed) if seed else None
+                    ).frames[0]  # frames[0] gets the first (and only) video from output
+                else:
+                    # Image-only generation (no video guidance)
+                    logger.info("Using image-only generation without video guidance")
+                    output = self.pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        reference_images=[image],  # Pass image as reference_images
+                        height=height,
+                        width=width,
+                        num_frames=num_frames,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        generator=torch.Generator().manual_seed(seed) if seed else None
+                    ).frames[0]  # frames[0] gets the first (and only) video from output
+
             
             # Export video
             logger.info(f"Exporting VACE video to: {output_path}")
@@ -756,16 +911,10 @@ class WanVACEPipelineWrapper:
         except Exception as e:
             logger.error(f"Error during VACE video generation: {e}")
             raise
-        finally:
-            # Clear GPU memory
-            clear_gpu_memory()
     
     def cleanup(self):
         """Clean up resources and free memory."""
         logger.info("Cleaning up VACE resources...")
-        
-        # Clear GPU memory
-        clear_gpu_memory()
         
         # Delete pipeline components
         if self.pipe is not None:
@@ -791,9 +940,20 @@ class WanVACEPipelineWrapper:
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get VACE model information."""
-        return {
+        info = {
             "model_id": self.model_id,
             "torch_dtype": str(self.torch_dtype),
             "device": self.device,
-            "enable_optimizations": self.enable_optimizations
-        } 
+            "enable_optimizations": self.enable_optimizations,
+            "enable_lora": self.enable_lora
+        }
+        
+        if self.enable_lora:
+            info.update({
+                "lora_path": self.lora_path,
+                "lora_filename": self.lora_filename,
+                "lora_adapter_name": self.lora_adapter_name,
+                "lora_strength": self.lora_strength
+            })
+        
+        return info 
