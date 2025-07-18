@@ -301,19 +301,17 @@ class Wan21Pipeline:
             torch.manual_seed(seed)
             logger.info(f"Set random seed: {seed}")
         
-        # Load and preprocess image
+        # Load image
         logger.info(f"Loading image: {image_path}")
-        image = load_and_preprocess_image(image_path)
-        if image is None:
-            raise ValueError(f"Failed to load image: {image_path}")
+        image = Image.open(image_path).convert("RGB")
         
         # Calculate dimensions using pipeline-specific parameters
         if height is None or width is None:
             height, width = calculate_pipeline_dimensions(image, self.pipe)
             logger.info(f"Calculated dimensions: {width}x{height}")
         
-        # Resize image to target dimensions
-        image = image.resize((width, height))
+        # Resize image to calculated dimensions
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
         
         # Generate output path
         if output_path is None:
@@ -811,16 +809,17 @@ class WanVACEPipelineWrapper:
             torch.manual_seed(seed)
             logger.info(f"Set random seed: {seed}")
         
-        # Load and preprocess image
+        # Load image
         logger.info(f"Loading image: {image_path}")
-        image = load_and_preprocess_image(image_path)
-        if image is None:
-            raise ValueError(f"Failed to load image: {image_path}")
+        image = Image.open(image_path).convert("RGB")
         
         # Calculate dimensions using pipeline-specific parameters
         if height is None or width is None:
             height, width = calculate_pipeline_dimensions(image, self.pipe)
             logger.info(f"Calculated dimensions: {width}x{height}")
+        
+        # Resize image to calculated dimensions
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
         
         # Memory-aware parameter adjustment for VACE
         # VACE is more memory-intensive, so reduce parameters if needed
