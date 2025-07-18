@@ -20,6 +20,13 @@ DEFAULT_FPS = 24
 LORA_GUIDANCE_SCALE = 1.0  # CFG Scale for LoRA models
 LORA_NUM_INFERENCE_STEPS = 8  # Inference Steps for LoRA models
 
+# LoRA Configuration
+ENABLE_LORA = True  # Enable/disable LoRA loading
+CAUSVID_LORA_PATH = "Kijai/WanVideo_comfy"
+CAUSVID_LORA_FILENAME = "Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors"
+CAUSVID_ADAPTER_NAME = "causvid"
+CAUSVID_STRENGTH = 0.5  # Recommended: 0.25–1.0, 0.5 is typical
+
 # Resolution Settings
 DEFAULT_HEIGHT = 480
 DEFAULT_WIDTH = 720

@@ -23,7 +23,8 @@ from transformers import CLIPVisionModel
 from config import (
     DEFAULT_FPS, DEFAULT_MODEL_ID, DEFAULT_TORCH_DTYPE, DEFAULT_DEVICE,
     DEFAULT_NUM_FRAMES, DEFAULT_GUIDANCE_SCALE, DEFAULT_NUM_INFERENCE_STEPS,
-    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT, LORA_GUIDANCE_SCALE, LORA_NUM_INFERENCE_STEPS
+    DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT, LORA_GUIDANCE_SCALE, LORA_NUM_INFERENCE_STEPS,
+    ENABLE_LORA, CAUSVID_LORA_PATH, CAUSVID_LORA_FILENAME, CAUSVID_ADAPTER_NAME, CAUSVID_STRENGTH
 )
 from utils import (
     setup_directories, validate_image_path, load_and_preprocess_image,
@@ -35,12 +36,6 @@ from utils import (
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Add LoRA configuration constants at the top of the file
-CAUSVID_LORA_PATH = "Kijai/WanVideo_comfy"
-CAUSVID_LORA_FILENAME = "Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors"
-CAUSVID_ADAPTER_NAME = "causvid"
-CAUSVID_STRENGTH = 0.5  # Recommended: 0.25–1.0, 0.5 is typical
 
 
 class Wan21Pipeline:
@@ -62,7 +57,7 @@ class Wan21Pipeline:
         local_files_only: bool = False,
         revision: str = "main",
         # LoRA configuration parameters
-        enable_lora: bool = True,
+        enable_lora: bool = ENABLE_LORA,
         lora_path: str = CAUSVID_LORA_PATH,
         lora_filename: str = CAUSVID_LORA_FILENAME,
         lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
@@ -427,7 +422,7 @@ class WanVACEPipelineWrapper:
         local_files_only: bool = False,
         revision: str = "main",
         # LoRA configuration parameters
-        enable_lora: bool = True,
+        enable_lora: bool = ENABLE_LORA,
         lora_path: str = CAUSVID_LORA_PATH,
         lora_filename: str = CAUSVID_LORA_FILENAME,
         lora_adapter_name: str = CAUSVID_ADAPTER_NAME,
@@ -548,9 +543,14 @@ class WanVACEPipelineWrapper:
             if self.enable_optimizations:
                 self._apply_optimizations()
             
-            # Move to device
-            self.pipe.to(self.device)
-            logger.info(f"VACE pipeline moved to {self.device}")
+            # Move to device (only if not using CPU offloading)
+            if not hasattr(self.pipe, 'enable_model_cpu_offload') or not self.enable_optimizations:
+                self.pipe.to(self.device)
+                logger.info(f"VACE pipeline moved to {self.device}")
+            else:
+                # When using CPU offloading, keep pipeline on CPU
+                # Offloading will automatically move components to GPU when needed
+                logger.info("Keeping VACE pipeline on CPU (model CPU offloading enabled)")
             
             logger.info("VACE model loaded successfully!")
             
@@ -822,7 +822,7 @@ class WanVACEPipelineWrapper:
         original_num_frames = num_frames
         if height >= 720 or width >= 720:
             # For high resolution, reduce frames to save memory
-            num_frames = min(num_frames, 60)  # Reduce from 121 to 60 for high res
+            num_frames = min(num_frames, 61)  # Reduce from 121 to 61 for high res
             logger.info(f"Reduced frames from {original_num_frames} to {num_frames} for memory optimization")
         
         # Generate output path
