@@ -145,6 +145,9 @@ def clear_gpu_memory():
         # Collect IPC memory
         torch.cuda.ipc_collect()
         
+        # Force synchronization to ensure memory is freed
+        torch.cuda.synchronize()
+        
         # Force garbage collection
         import gc
         gc.collect()

@@ -270,4 +270,8 @@ async def health_check():
     )
 
 if __name__ == '__main__':
+    # Set PyTorch CUDA allocation configuration to reduce memory fragmentation
+    import os
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=False, log_level="info")
