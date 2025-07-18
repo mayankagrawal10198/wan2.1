@@ -21,7 +21,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from wan21_pipeline import Wan21Pipeline, WanVACEPipelineWrapper
-from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory
+from utils import setup_directories, clear_gpu_memory, check_gpu_memory, force_free_unallocated_memory, clear_unallocated_memory
 from config import ENABLE_VACE
 
 # Setup logging
@@ -203,12 +203,15 @@ async def generate_video(
             ))
             clear_gpu_memory()
             
-            # Force free unallocated memory more aggressively
-            force_free_unallocated_memory()
-            
             # Small delay to ensure CUDA cache is fully cleared
             import time
             time.sleep(2)
+            
+            # Force free unallocated memory more aggressively after delay
+            force_free_unallocated_memory()
+            
+            # Specifically target unallocated memory
+            clear_unallocated_memory()
             
             if ENABLE_VACE:
                 try:

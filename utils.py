@@ -170,6 +170,8 @@ def force_free_unallocated_memory():
         allocated_before = torch.cuda.memory_allocated()
         reserved_before = torch.cuda.memory_reserved()
         
+        logger.info(f"Before clearing - Allocated: {allocated_before/1024**3:.2f} GB, Reserved: {reserved_before/1024**3:.2f} GB")
+        
         # Clear all caches
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
@@ -183,6 +185,11 @@ def force_free_unallocated_memory():
         for _ in range(3):
             gc.collect()
         
+        # Additional aggressive clearing
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+        torch.cuda.synchronize()
+        
         # Get memory stats after clearing
         allocated_after = torch.cuda.memory_allocated()
         reserved_after = torch.cuda.memory_reserved()
@@ -190,6 +197,7 @@ def force_free_unallocated_memory():
         freed_allocated = allocated_before - allocated_after
         freed_reserved = reserved_before - reserved_after
         
+        logger.info(f"After clearing - Allocated: {allocated_after/1024**3:.2f} GB, Reserved: {reserved_after/1024**3:.2f} GB")
         logger.info(f"Freed {freed_allocated/1024**3:.2f} GB allocated memory")
         logger.info(f"Freed {freed_reserved/1024**3:.2f} GB reserved memory")
         
@@ -198,6 +206,50 @@ def force_free_unallocated_memory():
         import gc
         gc.collect()
         return 0, 0
+
+
+def clear_unallocated_memory():
+    """Specifically target unallocated PyTorch memory."""
+    if torch.cuda.is_available():
+        # Get current stats
+        allocated = torch.cuda.memory_allocated()
+        reserved = torch.cuda.memory_reserved()
+        unallocated = reserved - allocated
+        
+        logger.info(f"Current unallocated memory: {unallocated/1024**3:.2f} GB")
+        
+        if unallocated > 1024**3:  # More than 1GB unallocated
+            logger.info("Large amount of unallocated memory detected, attempting to free...")
+            
+            # Try to force memory release
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+            torch.cuda.synchronize()
+            
+            # Reset memory pool
+            torch.cuda.reset_peak_memory_stats()
+            
+            # Multiple garbage collection passes
+            import gc
+            for i in range(5):
+                gc.collect()
+                torch.cuda.empty_cache()
+            
+            # Check if we freed any memory
+            new_allocated = torch.cuda.memory_allocated()
+            new_reserved = torch.cuda.memory_reserved()
+            new_unallocated = new_reserved - new_allocated
+            
+            freed = unallocated - new_unallocated
+            logger.info(f"Freed {freed/1024**3:.2f} GB of unallocated memory")
+            logger.info(f"Remaining unallocated: {new_unallocated/1024**3:.2f} GB")
+            
+            return freed
+        else:
+            logger.info("No significant unallocated memory to free")
+            return 0
+    else:
+        return 0
 
 
 def format_time(seconds: float) -> str:
